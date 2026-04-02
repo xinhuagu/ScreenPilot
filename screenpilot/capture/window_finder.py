@@ -58,21 +58,28 @@ def list_windows(*, include_offscreen: bool = False) -> list[WindowInfo]:
 
 
 def find_window(name: str) -> WindowInfo | None:
-    """Find a window by substring match on owner_name or window_name."""
+    """Find the largest window matching name substring on owner_name or window_name."""
     name_lower = name.lower()
-    for w in list_windows():
-        if name_lower in w.owner_name.lower() or name_lower in w.window_name.lower():
-            logger.info(
-                "Found window: '%s' (%s) at (%d, %d) %dx%d",
-                w.window_name,
-                w.owner_name,
-                w.region.left,
-                w.region.top,
-                w.region.width,
-                w.region.height,
-            )
-            return w
-    return None
+    matches = [
+        w
+        for w in list_windows()
+        if name_lower in w.owner_name.lower() or name_lower in w.window_name.lower()
+    ]
+    if not matches:
+        return None
+    # Pick the largest window (by area) — avoids grabbing tiny tab bars or toolbars
+    best = max(matches, key=lambda w: w.region.width * w.region.height)
+    logger.info(
+        "Found window: '%s' (%s) at (%d, %d) %dx%d [%d matches, picked largest]",
+        best.window_name,
+        best.owner_name,
+        best.region.left,
+        best.region.top,
+        best.region.width,
+        best.region.height,
+        len(matches),
+    )
+    return best
 
 
 def print_windows() -> None:

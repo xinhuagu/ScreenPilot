@@ -57,9 +57,12 @@ class ChangeDetector:
         Returns:
             ChangeResult with change level and dirty rects.
         """
-        # Convert to grayscale and downsample
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
-        gray_small = cv2.resize(gray, self._downsample_size, interpolation=cv2.INTER_AREA)
+        # Stride-subsample FIRST (near-zero cost), THEN convert to gray
+        target_w, target_h = self._downsample_size
+        step_y = max(1, frame.shape[0] // target_h)
+        step_x = max(1, frame.shape[1] // target_w)
+        subsampled = frame[::step_y, ::step_x]
+        gray_small = cv2.cvtColor(subsampled, cv2.COLOR_BGRA2GRAY)
 
         # --- Tier 1: Perceptual hash (< 1ms) ---
         current_hash = self._compute_dhash(gray_small)
@@ -90,7 +93,7 @@ class ChangeDetector:
                 change_level = ChangeLevel.MAJOR
             else:
                 change_level = ChangeLevel.MINOR
-            dirty_rects = self._extract_dirty_rects(gray, frame.shape)
+            dirty_rects = self._extract_dirty_rects(gray_small, frame.shape)
 
             self._prev_hash = current_hash
             self._prev_gray_small = gray_small
@@ -113,17 +116,16 @@ class ChangeDetector:
         return int(np.packbits(diff.flatten()).tobytes().hex(), 16)
 
     def _extract_dirty_rects(
-        self, current_gray: np.ndarray, frame_shape: tuple[int, ...]
+        self, current_gray_small: np.ndarray, frame_shape: tuple[int, ...]
     ) -> list[Rect]:
-        """Find bounding rects of changed regions at full resolution."""
+        """Find bounding rects of changed regions, scaled to full resolution."""
         if self._prev_gray_small is None:
             return [Rect(0, 0, float(frame_shape[1]), float(frame_shape[0]))]
 
-        # Work at downsample resolution for speed
+        # Already at downsample resolution — direct diff
         h, w = frame_shape[:2]
         ds_w, ds_h = self._downsample_size
-        current_ds = cv2.resize(current_gray, (ds_w, ds_h), interpolation=cv2.INTER_AREA)
-        diff = cv2.absdiff(current_ds, self._prev_gray_small)
+        diff = cv2.absdiff(current_gray_small, self._prev_gray_small)
         _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
 
         # Dilate to merge nearby changes
