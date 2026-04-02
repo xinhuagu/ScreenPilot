@@ -44,7 +44,12 @@ class Rect:
         return self.x1 <= p.x <= self.x2 and self.y1 <= p.y <= self.y2
 
     def contains_rect(self, other: Rect) -> bool:
-        return self.x1 <= other.x1 and self.y1 <= other.y1 and self.x2 >= other.x2 and self.y2 >= other.y2
+        return (
+            self.x1 <= other.x1
+            and self.y1 <= other.y1
+            and self.x2 >= other.x2
+            and self.y2 >= other.y2
+        )
 
     def intersection(self, other: Rect) -> Rect:
         return Rect(

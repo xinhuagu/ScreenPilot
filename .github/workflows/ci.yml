@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install mss numpy opencv-python-headless ultralytics onnxruntime \
+            Pillow pyyaml httpx anthropic pyautogui pytest ruff
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Smoke test imports
+        run: |
+          python -c "
+          from screenpilot.config import ScreenPilotConfig, CaptureRegion
+          from screenpilot.utils.geometry import Rect, Point, iou
+          from screenpilot.utils.timing import FPSCounter, Timer
+          from screenpilot.capture.change_detector import ChangeDetector, ChangeLevel
+          print('All imports OK')
+          "
+
+      - name: Ruff lint
+        run: ruff check screenpilot/
+
+      - name: Ruff format check
+        run: ruff format --check screenpilot/
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short

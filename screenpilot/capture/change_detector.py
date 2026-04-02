@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChangeLevel(Enum):
-    NONE = 0   # Frame identical to previous
+    NONE = 0  # Frame identical to previous
     MINOR = 1  # Small change (cursor blink, animation)
     MAJOR = 2  # Significant change (menu open, dialog, page transition)
 
@@ -70,7 +70,9 @@ class ChangeDetector:
 
         # --- Tier 2: Mean absolute difference as fast SSIM proxy (~1-2ms) ---
         if self._prev_gray_small is not None:
-            diff = np.mean(np.abs(gray_small.astype(np.float32) - self._prev_gray_small.astype(np.float32)))
+            diff = np.mean(
+                np.abs(gray_small.astype(np.float32) - self._prev_gray_small.astype(np.float32))
+            )
             similarity = 1.0 - (diff / 255.0)
 
             if similarity > self._similarity_threshold:
@@ -84,7 +86,10 @@ class ChangeDetector:
                 )
 
             # --- Tier 3: Dirty rect extraction ---
-            change_level = ChangeLevel.MAJOR if similarity < self._major_threshold else ChangeLevel.MINOR
+            if similarity < self._major_threshold:
+                change_level = ChangeLevel.MAJOR
+            else:
+                change_level = ChangeLevel.MINOR
             dirty_rects = self._extract_dirty_rects(gray, frame.shape)
 
             self._prev_hash = current_hash
@@ -107,7 +112,9 @@ class ChangeDetector:
         diff = resized[:, 1:] > resized[:, :-1]
         return int(np.packbits(diff.flatten()).tobytes().hex(), 16)
 
-    def _extract_dirty_rects(self, current_gray: np.ndarray, frame_shape: tuple[int, ...]) -> list[Rect]:
+    def _extract_dirty_rects(
+        self, current_gray: np.ndarray, frame_shape: tuple[int, ...]
+    ) -> list[Rect]:
         """Find bounding rects of changed regions at full resolution."""
         if self._prev_gray_small is None:
             return [Rect(0, 0, float(frame_shape[1]), float(frame_shape[0]))]
@@ -131,10 +138,12 @@ class ChangeDetector:
         rects = []
         for cnt in contours:
             x, y, cw, ch = cv2.boundingRect(cnt)
-            rects.append(Rect(
-                x1=x * scale_x,
-                y1=y * scale_y,
-                x2=(x + cw) * scale_x,
-                y2=(y + ch) * scale_y,
-            ))
+            rects.append(
+                Rect(
+                    x1=x * scale_x,
+                    y1=y * scale_y,
+                    x2=(x + cw) * scale_x,
+                    y2=(y + ch) * scale_y,
+                )
+            )
         return rects
