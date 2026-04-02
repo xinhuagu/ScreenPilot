@@ -3,7 +3,7 @@
 ## Complete Workflow
 
 ```
-gazepilot collect  →  Label Studio  →  gazepilot prep  →  gazepilot train
+gazefy collect  →  Label Studio  →  gazefy prep  →  gazefy train
    (screenshots)       (draw boxes)      (train/val split)     (YOLO → pack)
 ```
 
@@ -11,16 +11,16 @@ gazepilot collect  →  Label Studio  →  gazepilot prep  →  gazepilot train
 
 ```bash
 # Capture from a specific window
-gazepilot collect --window "Citrix" --pack-name my_erp --interval-ms 500
+gazefy collect --window "Citrix" --pack-name my_erp --interval-ms 500
 
 # Or capture a manual region
-gazepilot collect --region 100,50,1600,900 --pack-name my_erp --interval-ms 500
+gazefy collect --region 100,50,1600,900 --pack-name my_erp --interval-ms 500
 
 # Capture exactly 100 frames
-gazepilot collect --window "Citrix" --pack-name my_erp --max-frames 100
+gazefy collect --window "Citrix" --pack-name my_erp --max-frames 100
 
 # Capture for 5 minutes
-gazepilot collect --window "Citrix" --pack-name my_erp --duration 300
+gazefy collect --window "Citrix" --pack-name my_erp --duration 300
 ```
 
 Output:
@@ -119,7 +119,7 @@ Format: `class_id x_center y_center width height` (normalized 0-1)
 ## Step 3: Prepare Dataset (Train/Val Split)
 
 ```bash
-gazepilot prep datasets/my_erp/session_XXXXXX --split 0.8
+gazefy prep datasets/my_erp/session_XXXXXX --split 0.8
 ```
 
 This splits annotated images+labels into train (80%) and val (20%):
@@ -164,7 +164,7 @@ names:
 ## Step 5: Train
 
 ```bash
-gazepilot train \
+gazefy train \
   --dataset datasets/my_erp/session_XXXXXX/dataset.yaml \
   --pack-name my_erp \
   --epochs 50 \
@@ -197,9 +197,9 @@ python scripts/visualize_detections.py \
 | Model confused between similar elements | Add more examples of the confusing classes |
 
 To add more training data:
-1. Run `gazepilot collect` again (creates a new session)
+1. Run `gazefy collect` again (creates a new session)
 2. Annotate the new images
 3. Merge sessions (copy images+labels into one session dir)
-4. Re-run `gazepilot prep` and `gazepilot train`
+4. Re-run `gazefy prep` and `gazefy train`
 
 Typically 3-5 iterations, each adding 20-50 new annotated images.

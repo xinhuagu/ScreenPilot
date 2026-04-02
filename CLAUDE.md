@@ -1,8 +1,8 @@
-# GazePilot
+# Gazefy
 
 ## Project Overview
 
-GazePilot is a real-time screen monitoring and automation tool. It uses a custom-trained YOLO neural network to detect UI elements (buttons, menus, input fields, etc.) in a VDI-hosted Windows application from screen pixels alone, enabling LLM-driven precise software operation.
+Gazefy is a real-time screen monitoring and automation tool. It uses a custom-trained YOLO neural network to detect UI elements (buttons, menus, input fields, etc.) in a VDI-hosted Windows application from screen pixels alone, enabling LLM-driven precise software operation.
 
 See [PRD.md](./PRD.md) for product requirements and [DESIGN.md](./DESIGN.md) for technical architecture.
 
@@ -18,8 +18,8 @@ See [PRD.md](./PRD.md) for product requirements and [DESIGN.md](./DESIGN.md) for
 ## Project Structure
 
 ```
-gazepilot/          # Main package
-  config.py           # GazePilotConfig dataclass + YAML loading
+gazefy/          # Main package
+  config.py           # GazefyConfig dataclass + YAML loading
   core/               # Orchestrator, event loop
   capture/            # Screen capture, window finder, change detection
   detection/          # YOLO inference, post-processing, screen classifier, element verifier
@@ -43,7 +43,7 @@ configs/              # YAML configuration files
 pip install -e ".[dev]"
 
 # Run linter and formatter
-ruff check gazepilot/ && ruff format gazepilot/
+ruff check gazefy/ && ruff format gazefy/
 
 # Run tests
 pytest tests/ -v

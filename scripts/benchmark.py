@@ -18,20 +18,20 @@ import numpy as np
 # Add project root to path
 sys.path.insert(0, str(__file__).rsplit("/scripts", 1)[0])
 
-from gazepilot.capture.change_detector import ChangeDetector
-from gazepilot.capture.screen_capture import ScreenCapture
-from gazepilot.config import CaptureRegion
-from gazepilot.utils.timing import FPSCounter, Timer
+from gazefy.capture.change_detector import ChangeDetector
+from gazefy.capture.screen_capture import ScreenCapture
+from gazefy.config import CaptureRegion
+from gazefy.utils.timing import FPSCounter, Timer
 
 
 def resolve_region(args: argparse.Namespace) -> CaptureRegion:
     if args.window:
-        from gazepilot.capture.window_finder import find_window
+        from gazefy.capture.window_finder import find_window
 
         w = find_window(args.window)
         if w is None:
             print(f"Window '{args.window}' not found. Available windows:")
-            from gazepilot.capture.window_finder import print_windows
+            from gazefy.capture.window_finder import print_windows
 
             print_windows()
             sys.exit(1)
@@ -156,7 +156,7 @@ def benchmark_threaded_capture(region: CaptureRegion, duration: float = 5.0) -> 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="GazePilot M1 Benchmark")
+    parser = argparse.ArgumentParser(description="Gazefy M1 Benchmark")
     parser.add_argument("--window", type=str, help="Find window by name substring")
     parser.add_argument("--region", type=str, help="Manual region: left,top,width,height")
     parser.add_argument("--list-windows", action="store_true", help="List all visible windows")
@@ -164,7 +164,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.list_windows:
-        from gazepilot.capture.window_finder import print_windows
+        from gazefy.capture.window_finder import print_windows
 
         print("Visible windows:")
         print_windows()

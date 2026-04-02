@@ -1,4 +1,4 @@
-# GazePilot — Product Requirements Document
+# Gazefy — Product Requirements Document
 
 ## Product Goal
 
@@ -23,11 +23,11 @@ Enable AI-driven precise operation of professional software interfaces presented
 
 ## Non-Goals (explicitly out of scope)
 
-- **General-purpose UI automation**: GazePilot is not Anthropic Computer Use. V1 ships one production-ready application pack and a runtime that can support more packs later, trading generality for precision.
+- **General-purpose UI automation**: Gazefy is not Anthropic Computer Use. V1 ships one production-ready application pack and a runtime that can support more packs later, trading generality for precision.
 - **Cross-platform agent**: V1 is macOS-only on the operator machine. The target application may run locally, inside VDI, or through another remote session, but cross-host automation parity is not a V1 goal.
 - **Model training infrastructure**: No cloud training pipeline. Training happens locally or on a single GPU machine. Ultralytics CLI is sufficient.
 - **Full product GUI / dashboard**: V1 does not ship a general-purpose desktop console or web dashboard. A lightweight training-sample collector UI is in scope.
-- **Recording and replaying macros**: GazePilot is not a macro recorder. The LLM reasons about each step, adapting to screen state.
+- **Recording and replaying macros**: Gazefy is not a macro recorder. The LLM reasons about each step, adapting to screen state.
 
 ## V1 Scope
 
@@ -180,7 +180,7 @@ V1 should ship a **small desktop collector controller**, not a full product shel
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ GazePilot Collector                           ● Recording │
+│ Gazefy Collector                           ● Recording │
 ├──────────────────────────────────────────────────────────────┤
 │ Pack: [sap_export_________]  Session: [2025-04-02-am_____]  │
 │ Window: [Citrix Viewer - SAP Export Screen          v]      │

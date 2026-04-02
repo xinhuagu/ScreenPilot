@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from gazepilot.training.dataset_prep import find_annotated_pairs, split_dataset
+from gazefy.training.dataset_prep import find_annotated_pairs, split_dataset
 
 
 def _setup_session(tmp: Path, n_images: int = 10, n_labels: int = 8) -> Path:

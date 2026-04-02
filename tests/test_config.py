@@ -3,11 +3,11 @@
 import tempfile
 from pathlib import Path
 
-from gazepilot.config import CaptureRegion, GazePilotConfig
+from gazefy.config import CaptureRegion, GazefyConfig
 
 
 def test_default_config():
-    cfg = GazePilotConfig()
+    cfg = GazefyConfig()
     assert cfg.capture_fps == 20
     assert cfg.retina_scale == 2.0
     assert cfg.region.width == 1920
@@ -28,7 +28,7 @@ mode: debug
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write(yaml_content)
         f.flush()
-        cfg = GazePilotConfig.from_yaml(f.name)
+        cfg = GazefyConfig.from_yaml(f.name)
 
     assert cfg.region.top == 50
     assert cfg.region.left == 100

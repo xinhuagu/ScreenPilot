@@ -5,9 +5,9 @@ from pathlib import Path
 
 import yaml
 
-from gazepilot.core.app_router import AppRouter
-from gazepilot.core.application_pack import ApplicationPack, PackMetadata
-from gazepilot.core.model_registry import ModelRegistry
+from gazefy.core.app_router import AppRouter
+from gazefy.core.application_pack import ApplicationPack, PackMetadata
+from gazefy.core.model_registry import ModelRegistry
 
 
 def _create_pack_dir(tmp: Path, name: str, window_match: list[str] | None = None) -> Path:

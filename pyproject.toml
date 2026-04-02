@@ -1,5 +1,5 @@
 [project]
-name = "gazepilot"
+name = "gazefy"
 version = "0.1.0"
 description = "Real-time screen monitoring and AI-driven automation for VDI-hosted applications"
 requires-python = ">=3.11"
@@ -46,14 +46,14 @@ dev = [
 ]
 # Everything for local development on macOS
 all = [
-    "gazepilot[platform,ml,llm,training,dev]",
+    "gazefy[platform,ml,llm,training,dev]",
 ]
 
 [project.scripts]
-gazepilot = "gazepilot.cli:main"
+gazefy = "gazefy.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["gazepilot*"]
+include = ["gazefy*"]
 
 [build-system]
 requires = ["setuptools>=68.0"]

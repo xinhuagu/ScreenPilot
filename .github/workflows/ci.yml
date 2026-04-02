@@ -23,30 +23,30 @@ jobs:
       - name: Smoke test imports
         run: |
           python -c "
-          from gazepilot.config import GazePilotConfig, CaptureRegion
-          from gazepilot.utils.geometry import Rect, Point, iou
-          from gazepilot.utils.timing import FPSCounter, Timer
-          from gazepilot.capture.change_detector import ChangeDetector, ChangeLevel
-          from gazepilot.core.application_pack import ApplicationPack, PackMetadata
-          from gazepilot.core.model_registry import ModelRegistry
-          from gazepilot.core.app_router import AppRouter
-          from gazepilot.training.collector import DataCollector
-          from gazepilot.training.trainer import PackTrainer
-          from gazepilot.training.dataset_prep import split_dataset
-          from gazepilot.tracker.ui_map import UIMap, UIElement, Detection, UIMapDiff
-          from gazepilot.tracker.element_tracker import ElementTracker
-          from gazepilot.actions.action_types import Action, ActionResult, ActionType
-          from gazepilot.actions.coordinate_transform import CoordinateTransform
-          from gazepilot.llm.formatters import format_state
-          from gazepilot.llm.parsers import parse_actions
+          from gazefy.config import GazefyConfig, CaptureRegion
+          from gazefy.utils.geometry import Rect, Point, iou
+          from gazefy.utils.timing import FPSCounter, Timer
+          from gazefy.capture.change_detector import ChangeDetector, ChangeLevel
+          from gazefy.core.application_pack import ApplicationPack, PackMetadata
+          from gazefy.core.model_registry import ModelRegistry
+          from gazefy.core.app_router import AppRouter
+          from gazefy.training.collector import DataCollector
+          from gazefy.training.trainer import PackTrainer
+          from gazefy.training.dataset_prep import split_dataset
+          from gazefy.tracker.ui_map import UIMap, UIElement, Detection, UIMapDiff
+          from gazefy.tracker.element_tracker import ElementTracker
+          from gazefy.actions.action_types import Action, ActionResult, ActionType
+          from gazefy.actions.coordinate_transform import CoordinateTransform
+          from gazefy.llm.formatters import format_state
+          from gazefy.llm.parsers import parse_actions
           print('All imports OK')
           "
 
       - name: Ruff lint
-        run: ruff check gazepilot/
+        run: ruff check gazefy/
 
       - name: Ruff format check
-        run: ruff format --check gazepilot/
+        run: ruff format --check gazefy/
 
       - name: Run tests
         run: pytest tests/ -v --tb=short

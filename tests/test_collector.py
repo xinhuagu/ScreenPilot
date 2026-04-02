@@ -5,7 +5,7 @@ import tempfile
 
 import numpy as np
 
-from gazepilot.training.collector import ActionEvent, CollectorConfig, DataCollector
+from gazefy.training.collector import ActionEvent, CollectorConfig, DataCollector
 
 
 def test_collector_session_lifecycle():

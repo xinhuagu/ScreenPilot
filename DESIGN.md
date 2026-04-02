@@ -1,4 +1,4 @@
-# GazePilot Design Document
+# Gazefy Design Document
 
 ## Context
 
@@ -6,7 +6,7 @@ A real-time screen monitoring and automation tool that uses custom-trained neura
 
 Secondary scenario: COBOL mainframe automation via Virtel browser terminal.
 
-Core analogy: like Google MediaPipe processes camera frames to recognize hand gestures in real-time, GazePilot processes screen frames to recognize UI elements in real-time.
+Core analogy: like Google MediaPipe processes camera frames to recognize hand gestures in real-time, Gazefy processes screen frames to recognize UI elements in real-time.
 
 ## Core Design Principle
 
@@ -70,7 +70,7 @@ The model is idle 99% of the time. CPU/GPU usage stays minimal.
 
 ## Differentiation: Higher Precision Than General-Purpose Solutions
 
-GazePilot's core advantage over Anthropic Computer Use, OmniParser, and similar general-purpose tools: **deep understanding of a specific application + high-precision operation**.
+Gazefy's core advantage over Anthropic Computer Use, OmniParser, and similar general-purpose tools: **deep understanding of a specific application + high-precision operation**.
 
 The system should support multiple applications, but not by forcing them into one monolithic model. The correct architecture is a shared runtime plus **hot-swappable application packs**.
 
@@ -92,7 +92,7 @@ Without a manual, the system operates normally using only the detection model + 
 
 ## Multi-Application Strategy: Hot-Swappable Application Packs
 
-GazePilot should not assume one global detector for all software. Each target application should ship as an independent runtime pack that can be loaded, unloaded, and upgraded without affecting other applications.
+Gazefy should not assume one global detector for all software. Each target application should ship as an independent runtime pack that can be loaded, unloaded, and upgraded without affecting other applications.
 
 An **ApplicationPack** contains:
 - detector model
@@ -168,13 +168,13 @@ stability:    5                   # Consecutive frames confirmed
 
 ## Ten Modules
 
-### 1. Screen Capture (`gazepilot/capture/screen_capture.py`)
+### 1. Screen Capture (`gazefy/capture/screen_capture.py`)
 - Capture VDI window region using `mss` library, ~30 FPS on M-series
 - Dedicated thread with ring buffer for last N frames
 - Auto-detect VDI window position via `pyobjc-framework-Quartz`
 - Fallback: manual region selection
 
-### 2. Change Detector (`gazepilot/capture/change_detector.py`)
+### 2. Change Detector (`gazefy/capture/change_detector.py`)
 - Three-tier filtering, progressively more precise:
   1. **Perceptual hash** (every frame, <1ms): Downsample to 160x120, compute hash; skip if identical
   2. **SSIM similarity** (when hash differs, ~3ms): > 0.98 treated as VDI compression noise; skip
@@ -182,21 +182,21 @@ stability:    5                   # Consecutive frames confirmed
 - Output: `changed: bool` + `change_level: NONE/MINOR/MAJOR` + `dirty_rects`
 - MAJOR = menu opened, dialog appeared, page transition
 
-### 3. UI Detector (`gazepilot/detection/detector.py`)
+### 3. UI Detector (`gazefy/detection/detector.py`)
 - Pack-specific custom-trained YOLOv8 model, exported to CoreML for Apple Silicon ANE
 - Input 640x640 (letterbox scaled), output bbox + class + confidence
 - Class set defined by the active ApplicationPack; typical packs use ~8-15 classes such as button, menu_bar, menu_item, input_field, checkbox, radio_button, dropdown, dialog, toolbar, label, tab, scrollbar, icon
 - Inference ~15-30ms on M1/M2/M3
 - Post-processing: coordinate mapping to original resolution, hierarchical containment computation
 
-### 3.5. App Router + Model Registry (`gazepilot/runtime/`)
+### 3.5. App Router + Model Registry (`gazefy/runtime/`)
 - `app_router.py` — Identify current application from window title, bundle/process metadata, lightweight screenshot classifier, or configured capture region
 - `model_registry.py` — Load, cache, unload, and version ApplicationPacks
 - `application_pack.py` — Typed definition of the pack contract (models, taxonomies, workflows, verifier rules, thresholds)
 - Supports pack fallback policy: exact app match → compatible app family → abort if unknown
 - Enables hot-swapping when the user moves between applications or VDI sessions
 
-### 4. Element Tracker (`gazepilot/tracker/element_tracker.py`)
+### 4. Element Tracker (`gazefy/tracker/element_tracker.py`)
 - Maintains **UIMap** — structured table of all current screen elements
 - Each element has a **stable ID** (cross-frame IoU matching, similar to video object tracking)
 - Stability filtering: element must appear in ≥2 consecutive frames to be confirmed (prevents flickering false positives)
@@ -205,7 +205,7 @@ stability:    5                   # Consecutive frames confirmed
 
 (UIElement data structure defined in "Enhanced UIElement" section above)
 
-### 5. Cursor Monitor (`gazepilot/cursor/cursor_monitor.py`)
+### 5. Cursor Monitor (`gazefy/cursor/cursor_monitor.py`)
 - Dedicated thread, 60Hz polling via `pyautogui.position()`
 - Screen coords → frame coords translation (subtract window offset, handle Retina 2x scaling)
 - **Point-in-rectangle** test against UIMap (nanosecond-level)
@@ -213,7 +213,7 @@ stability:    5                   # Consecutive frames confirmed
 - Output: `CursorState { position, current_element, dwell_time }`
 - Event callbacks: `on_element_enter`, `on_element_leave`
 
-### 6. Action Executor (`gazepilot/actions/executor.py`)
+### 6. Action Executor (`gazefy/actions/executor.py`)
 - Translates LLM decisions into pyautogui operations
 - **Coordinate chain**: pack-specific target hotspot (pixels) / Retina scale + window offset = screen logical coords
 - Action types: click, double_click, right_click, type_text, press_key, hotkey, scroll
@@ -221,7 +221,7 @@ stability:    5                   # Consecutive frames confirmed
 - **Verification**: wait for change detector to report change after execution; timeout = failure
 - Safety: dry_run mode logs actions without executing
 
-### 7. LLM Interface (`gazepilot/llm/`)
+### 7. LLM Interface (`gazefy/llm/`)
 - Serialize UIMap into LLM-readable structured text
 - Include spatial descriptions (hierarchical indentation, coordinates, cursor position annotation)
 - Support attaching screenshot (base64) for vision-capable models
@@ -229,14 +229,14 @@ stability:    5                   # Consecutive frames confirmed
 - Inject ApplicationPack metadata so the LLM sees the active app, available workflows, semantic IDs, and action constraints
 - Support Anthropic Claude / OpenAI / local Ollama
 
-### 8. Training Pipeline (`gazepilot/training/`)
+### 8. Training Pipeline (`gazefy/training/`)
 - **Per-pack data collection mode**: auto-capture screenshots + record cursor clicks while user operates one target application
 - **Model-assisted labeling**: use current model for pre-annotation, human corrects in Label Studio
 - **VDI-specific augmentation**: JPEG compression (quality 20-80), blur, color shift, resolution scaling
 - **Training**: Ultralytics API, supports MPS/CUDA
 - **Export**: produce an ApplicationPack artifact, not just a naked model file
 
-### 8.5. Collector UI (`gazepilot/collector_ui/`)
+### 8.5. Collector UI (`gazefy/collector_ui/`)
 - Lightweight desktop controller for training-sample collection; intended to stay visible while the operator works inside the VDI app
 - V1 recommendation: `PySide6` desktop UI, because it integrates directly with Python runtime code and avoids introducing a separate JS/Electron shell
 - UI responsibilities:
@@ -253,7 +253,7 @@ stability:    5                   # Consecutive frames confirmed
   - `training/collector.py` for session persistence
 - The UI must remain optional. The underlying collector should still be scriptable from CLI for automation and tests.
 
-### 9. Knowledge (optional) (`gazepilot/knowledge/`)
+### 9. Knowledge (optional) (`gazefy/knowledge/`)
 Only enabled when software manual is provided; otherwise skipped entirely.
 - `manual_parser.py` — Parse HTML manual:
   - Extract screenshots (`<img>`) + surrounding description text → supplementary training data
@@ -263,7 +263,7 @@ Only enabled when software manual is provided; otherwise skipped entirely.
 - `workflow_graph.py` — Workflow definitions: task_name → step sequence (what to click, what to type, what key to press)
 - Auto-inject relevant knowledge into LLM prompt (element descriptions for current screen + current workflow position)
 
-### 10. Screen Classifier + Element Verifier (`gazepilot/detection/`)
+### 10. Screen Classifier + Element Verifier (`gazefy/detection/`)
 - `screen_classifier.py` — Pack-specific classifier to identify current application page ("Main Screen" / "Order Entry" / "Report Export", etc.)
 - `element_verifier.py` — Pre-click: crop target bbox, run local OCR and pack-specific rules to verify text matches expected target
 - Post-action: re-capture screen + screen classifier confirms transition to expected page
@@ -521,10 +521,10 @@ Do not rewrite for performance before profiling. For this system, architecture c
 ## Project Structure
 
 ```
-GazePilot/
-├── gazepilot/
+Gazefy/
+├── gazefy/
 │   ├── cli.py                      # CLI entry point (collect, prep, train, etc.)
-│   ├── config.py                   # GazePilotConfig dataclass + YAML loading
+│   ├── config.py                   # GazefyConfig dataclass + YAML loading
 │   │
 │   ├── core/                       # System wiring
 │   │   ├── orchestrator.py         # Main runtime loop (wires all modules)
@@ -646,7 +646,7 @@ Step 8: Deployment               (drop pack into app_packs/ and let runtime load
 The preferred V1 collection experience is a compact desktop collector UI, not a terminal-only workflow.
 
 Recommended operator flow:
-1. Open GazePilot Collector
+1. Open Gazefy Collector
 2. Select the target VDI window from the visible window list
 3. Enter `pack name` and `session name`
 4. Choose capture mode: interval, change-triggered, click-triggered, or hybrid
@@ -659,7 +659,7 @@ Recommended V1 UI layout:
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ GazePilot Collector                           ● Recording │
+│ Gazefy Collector                           ● Recording │
 ├──────────────────────────────────────────────────────────────┤
 │ Pack: [my_app____________]  Session: [session_001________]  │
 │ Window: [Citrix Viewer - My App                     v]      │

@@ -1,14 +1,14 @@
-# GazePilot
+# Gazefy
 
-[![CI](https://github.com/xinhuagu/GazePilot/actions/workflows/ci.yml/badge.svg)](https://github.com/xinhuagu/GazePilot/actions/workflows/ci.yml)
+[![CI](https://github.com/xinhuagu/Gazefy/actions/workflows/ci.yml/badge.svg)](https://github.com/xinhuagu/Gazefy/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-green.svg)](LICENSE)
 
 AI-driven screen automation for any application — desktop, VDI, remote, or legacy. Train a custom YOLO neural network to perceive your application's UI from screen pixels alone, then let an LLM operate it precisely. No accessibility API, no source code, no plugins required.
 
-## Why GazePilot?
+## Why Gazefy?
 
-Many applications have no automation API — enterprise software, legacy systems, VDI-hosted apps, proprietary tools. General-purpose screen agents (Anthropic Computer Use, OmniParser) work across any app but lack precision for specific software. GazePilot flips this: **train once for your application, operate with high accuracy forever.**
+Many applications have no automation API — enterprise software, legacy systems, VDI-hosted apps, proprietary tools. General-purpose screen agents (Anthropic Computer Use, OmniParser) work across any app but lack precision for specific software. Gazefy flips this: **train once for your application, operate with high accuracy forever.**
 
 Works with:
 - Desktop applications (Windows, macOS)
@@ -18,7 +18,7 @@ Works with:
 - Any software you can see on screen
 
 ```
-Train a model on YOUR app → Pack it → GazePilot operates it precisely
+Train a model on YOUR app → Pack it → Gazefy operates it precisely
 ```
 
 ## How It Works
@@ -41,7 +41,7 @@ UIMap (structured element map: buttons, menus, inputs, etc.)
 
 - **Application Packs** — hot-swappable per-app model + config artifacts. Train once, deploy as a pack.
 - **Real-time cursor awareness** — know which UI element the mouse is hovering over at 60Hz
-- **LLM-driven operation** — describe a task in natural language, GazePilot executes it
+- **LLM-driven operation** — describe a task in natural language, Gazefy executes it
 - **VDI-optimized** — handles compression artifacts, network latency, and pixel-only environments
 - **Training pipeline included** — collect screenshots, annotate, train, package, deploy
 
@@ -61,20 +61,20 @@ pip install -e ".[all]"
 
 ```bash
 # List available windows
-gazepilot list-windows
+gazefy list-windows
 
 # Capture screenshots from your VDI app
-gazepilot collect --window "Citrix" --pack-name my_erp --interval-ms 500
+gazefy collect --window "Citrix" --pack-name my_erp --interval-ms 500
 ```
 
 ### Annotate & Train
 
 ```bash
 # After annotating in Label Studio, split into train/val
-gazepilot prep datasets/my_erp/session_xxx --split 0.8
+gazefy prep datasets/my_erp/session_xxx --split 0.8
 
 # Train and package as ApplicationPack
-gazepilot train \
+gazefy train \
   --dataset datasets/my_erp/session_xxx/dataset.yaml \
   --pack-name my_erp \
   --window-match "Citrix" "My ERP" \
@@ -88,13 +88,13 @@ gazepilot train \
 python scripts/benchmark.py --window "Citrix"
 
 # Monitor mode (coming in M5)
-# gazepilot monitor --window "Citrix"
+# gazefy monitor --window "Citrix"
 ```
 
 ## Architecture
 
 ```
-gazepilot/
+gazefy/
 ├── core/           Orchestrator, ApplicationPack, AppRouter, ModelRegistry
 ├── capture/        Screen capture, window finder, change detection
 ├── detection/      YOLO inference → list[Detection]
@@ -142,8 +142,8 @@ pip install -e ".[dev]"
 pytest tests/ -v
 
 # Lint + format
-ruff check gazepilot/
-ruff format gazepilot/
+ruff check gazefy/
+ruff format gazefy/
 ```
 
 ## Milestones
