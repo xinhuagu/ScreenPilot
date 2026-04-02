@@ -1,0 +1,42 @@
+# ScreenPilot default configuration
+
+region:
+  top: 0
+  left: 0
+  width: 1920
+  height: 1080
+
+capture_fps: 20
+retina_scale: 2.0
+window_name: ""  # Set to VDI client window name for auto-detect (e.g., "Citrix Viewer")
+
+# Change detection
+similarity_threshold: 0.98
+downsample_size: [160, 120]
+
+# Detection (set model_path to your trained model)
+model_path: ""
+device: coreml
+conf_threshold: 0.5
+iou_threshold: 0.45
+input_size: 1024
+
+# Tracker
+iou_match_threshold: 0.5
+stale_after_frames: 5
+min_stability: 2
+
+# Cursor
+cursor_poll_rate_hz: 60
+
+# Actions
+dry_run: true  # Start in dry_run for safety
+inter_action_delay_ms: 100
+action_verify_timeout_ms: 2000
+
+# LLM
+llm_provider: anthropic
+llm_model: claude-sonnet-4-20250514
+
+# Mode: monitor, autopilot, collect, debug
+mode: monitor

@@ -1,0 +1,51 @@
+[project]
+name = "screenpilot"
+version = "0.1.0"
+description = "Real-time screen monitoring and AI-driven automation for VDI-hosted applications"
+requires-python = ">=3.11"
+license = "MIT"
+
+dependencies = [
+    "mss>=9.0",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "ultralytics>=8.3",
+    "onnxruntime>=1.17",
+    "pyautogui>=0.9",
+    "pyobjc-framework-Quartz>=10",
+    "Pillow>=10.0",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.5",
+]
+training = [
+    "albumentations>=1.4",
+]
+knowledge = [
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["screenpilot*"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
