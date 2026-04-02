@@ -3,7 +3,7 @@ name = "screenpilot"
 version = "0.1.0"
 description = "Real-time screen monitoring and AI-driven automation for VDI-hosted applications"
 requires-python = ">=3.11"
-license = "MIT"
+license = "Apache-2.0"
 
 # Core deps — CI-safe, cross-platform
 dependencies = [
