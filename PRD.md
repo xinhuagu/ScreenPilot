@@ -26,7 +26,7 @@ Enable AI-driven precise operation of professional applications running inside a
 - **General-purpose UI automation**: ScreenPilot is not Anthropic Computer Use. V1 ships one production-ready application pack and a runtime that can support more packs later, trading generality for precision.
 - **Cross-platform agent**: V1 is macOS-only (the machine that views the VDI). The VDI-hosted application can be any OS.
 - **Model training infrastructure**: No cloud training pipeline. Training happens locally or on a single GPU machine. Ultralytics CLI is sufficient.
-- **Visual overlay / GUI for the tool itself**: V1 is CLI + terminal output. No desktop app, no Electron wrapper.
+- **Full product GUI / dashboard**: V1 does not ship a general-purpose desktop console or web dashboard. A lightweight training-sample collector UI is in scope.
 - **Recording and replaying macros**: ScreenPilot is not a macro recorder. The LLM reasons about each step, adapting to screen state.
 
 ## V1 Scope
@@ -43,7 +43,8 @@ A CLI tool with a shared runtime that supports **hot-swappable application packs
 6. Accepts natural language tasks, sends UIMap + screenshot to an LLM, executes returned actions
 7. Executes actions through a deterministic runtime state machine with verification, retry, re-detect, and abort behavior
 8. Includes a data collection mode for building per-pack training datasets
-9. Includes a training/evaluation wrapper around Ultralytics that outputs an `ApplicationPack` artifact
+9. Includes a lightweight collector UI for session control, sample review, and export into the labeling workflow
+10. Includes a training/evaluation wrapper around Ultralytics that outputs an `ApplicationPack` artifact
 
 ### What V1 does NOT deliver
 
@@ -67,6 +68,7 @@ A CLI tool with a shared runtime that supports **hot-swappable application packs
 | **Cursor-to-element latency** | < 50ms after screen change | Benchmark script measures time from frame capture to UIMap update |
 | **Click precision accuracy** | ≥ 95% effective hits on benchmark controls | Compare actual effect zone hits vs ground-truth expected hotspots |
 | **Training data effort** | < 3 days from zero to working model | Clock the full cycle: collection → annotation → training → iteration |
+| **Collector usability** | New user can start a capture session in < 3 minutes | Observe first-time user completing: choose window -> start session -> collect -> stop -> export |
 
 **Primary success criterion**: no unsafe destructive misfires and task success rate ≥ 95% on the fixed regression suite. mAP is a proxy — what matters is whether the system completes tasks safely and repeatably.
 
@@ -138,12 +140,72 @@ A CLI tool with a shared runtime that supports **hot-swappable application packs
 - Export per-pack dataset in YOLO format (images/ + labels/ + dataset.yaml)
 - Configurable capture interval
 
-### FR11: Model Training and Pack Packaging
+### FR11: Collector UI
+- Provide a lightweight local UI for training-sample collection, optimized for use while the operator is actively working inside the VDI application
+- Let the user select the target window, pack name, and session name before collection starts
+- Provide `Start`, `Pause`, `Resume`, `Stop`, and `Discard` controls
+- Show live collection status: active window, capture mode, frame count, dedupe/skipped count, last-captured thumbnail, output path
+- Support multiple collection triggers: fixed interval, screen change, click-following capture, and manual hotkey capture
+- Let the user mark important screens, add short notes/tags, and flag sessions for immediate annotation
+- Offer one-click handoff to the labeling workflow by opening the output folder or launching Label Studio against the exported session
+- Stay small, always-on-top optional, and non-disruptive to VDI operation
+
+### FR12: Model Training and Pack Packaging
 - Wrap Ultralytics training API with VDI-specific augmentations
 - Support training on MPS (Apple Silicon)
 - Export trained model to CoreML
 - Package the trained detector together with labels, targeting rules, verifier rules, and config as an `ApplicationPack`
 - Evaluation script with per-class mAP breakdown and end-to-end regression reporting
+
+## Collector UI Concept
+
+V1 should ship a **small desktop collector controller**, not a full product shell. The UI exists to make data collection fast, safe, and obvious for non-developer operators.
+
+### Primary user flow
+
+1. Choose target window
+2. Enter pack name and session name
+3. Pick capture strategy
+4. Start collection
+5. Operate the target software normally
+6. Pause/mark/note important screens when needed
+7. Stop collection and review summary
+8. Open the exported session in Label Studio or Finder
+
+### UI layout sketch
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ ScreenPilot Collector                           ● Recording │
+├──────────────────────────────────────────────────────────────┤
+│ Pack: [sap_export_________]  Session: [2025-04-02-am_____]  │
+│ Window: [Citrix Viewer - SAP Export Screen          v]      │
+│ Capture: [Change + Click v]  Interval: [500 ms]             │
+│ Hotkey: [Cmd+Shift+S]  Dedupe: [Medium v]                   │
+├──────────────────────────────────────────────────────────────┤
+│ [ Start ] [ Pause ] [ Stop ] [ Discard ] [ Mark Important ] │
+│ [ Add Note ] [ Open Output ] [ Review in Label Studio ]     │
+├──────────────────────────────────────────────────────────────┤
+│ Frames: 182   Saved: 74   Skipped: 108   Last event: click  │
+│ Output: datasets/sap_export/session_2025_04_02_01           │
+├──────────────────────────────────────────────────────────────┤
+│ Last capture preview                                         │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │                    screenshot thumbnail                 │ │
+│ └──────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────┤
+│ Notes / Tags: [export dialog, error state, full table____]  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Interaction principles
+
+- The UI must be understandable at a glance while the user is focused on the VDI app
+- The window should stay compact and movable; a minimal mode is preferred over a large dashboard
+- Recording state must always be obvious
+- Dangerous actions like `Discard` should require confirmation
+- Collection should continue even if the preview panel is hidden or minimized
+- The UI should optimize for throughput, not aesthetics
 
 ## Non-Functional Requirements
 
@@ -170,6 +232,7 @@ A CLI tool with a shared runtime that supports **hot-swappable application packs
 | Detection model | YOLOv8 (Ultralytics) | Best ecosystem, training CLI, export pipeline, proven for UI detection |
 | Training framework | Ultralytics API | Wraps PyTorch; handles augmentation, training, validation, export in one CLI |
 | Annotation tool | Label Studio | Open-source, supports model-assisted pre-labeling, YOLO export |
+| Collector UI toolkit | PySide6 | Collector UI is a local desktop control surface tightly coupled to Python capture/training code; avoiding a JS/Electron shell keeps the system single-runtime and simpler to ship |
 | Runtime packaging | `ApplicationPack` directory artifact | Clean boundary for hot-swappable per-app models, labels, workflows, and verifier rules |
 | Window detection | Quartz CGWindowList | Native macOS window enumeration; reliable foundation for routing/capture |
 | Action execution baseline | pyautogui | Simple baseline for V1; upgrade path remains open if precision requires native events |
@@ -247,6 +310,7 @@ Key architectural properties:
 ### M3: First Pack Data Pipeline (Week 3)
 **Deliverable**: Data collector that records screenshots + clicks for the first target app; annotation workflow documented and tested.
 - Data collector (background capture + click logging)
+- Collector UI with session controls and output handoff
 - YOLO dataset exporter (`datasets/<app>/images`, `labels`, `dataset.yaml`)
 - GroundingDINO pre-annotation evaluation script
 - VDI augmentation transforms

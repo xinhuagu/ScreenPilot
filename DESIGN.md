@@ -236,6 +236,23 @@ stability:    5                   # Consecutive frames confirmed
 - **Training**: Ultralytics API, supports MPS/CUDA
 - **Export**: produce an ApplicationPack artifact, not just a naked model file
 
+### 8.5. Collector UI (`screenpilot/collector_ui/`)
+- Lightweight desktop controller for training-sample collection; intended to stay visible while the operator works inside the VDI app
+- V1 recommendation: `PySide6` desktop UI, because it integrates directly with Python runtime code and avoids introducing a separate JS/Electron shell
+- UI responsibilities:
+  - choose target window
+  - set pack/session names
+  - start/pause/stop/discard collection
+  - show frame counts, dedupe/skipped counts, last capture preview, and output path
+  - attach notes/tags to important captures
+  - hand off finished sessions to Label Studio or Finder
+- The collector UI should orchestrate existing runtime modules, not duplicate them:
+  - `window_finder.py` for window selection
+  - `screen_capture.py` for frame source
+  - `change_detector.py` for change-triggered sampling
+  - `training/collector.py` for session persistence
+- The UI must remain optional. The underlying collector should still be scriptable from CLI for automation and tests.
+
 ### 9. Knowledge (optional) (`screenpilot/knowledge/`)
 Only enabled when software manual is provided; otherwise skipped entirely.
 - `manual_parser.py` — Parse HTML manual:
@@ -609,6 +626,51 @@ Step 7: Packaging                (export models + YAML rules into ApplicationPac
          ↓
 Step 8: Deployment               (drop pack into app_packs/ and let runtime load it)
 ```
+
+### Collector UI Workflow
+
+The preferred V1 collection experience is a compact desktop collector UI, not a terminal-only workflow.
+
+Recommended operator flow:
+1. Open ScreenPilot Collector
+2. Select the target VDI window from the visible window list
+3. Enter `pack name` and `session name`
+4. Choose capture mode: interval, change-triggered, click-triggered, or hybrid
+5. Start collection and operate the target software normally
+6. Use `Mark Important` or `Add Note` for valuable states such as dialogs, errors, or dense forms
+7. Stop collection and review the session summary
+8. Open the session directly in Label Studio or Finder for annotation
+
+Recommended V1 UI layout:
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ ScreenPilot Collector                           ● Recording │
+├──────────────────────────────────────────────────────────────┤
+│ Pack: [my_app____________]  Session: [session_001________]  │
+│ Window: [Citrix Viewer - My App                     v]      │
+│ Capture: [Change + Click v]  Interval: [500 ms]             │
+│ Hotkey: [Cmd+Shift+S]  Dedupe: [Medium v]                   │
+├──────────────────────────────────────────────────────────────┤
+│ [ Start ] [ Pause ] [ Stop ] [ Discard ] [ Mark Important ] │
+│ [ Add Note ] [ Open Output ] [ Review in Label Studio ]     │
+├──────────────────────────────────────────────────────────────┤
+│ Frames: 182   Saved: 74   Skipped: 108   Last event: click  │
+│ Output: datasets/my_app/session_001                         │
+├──────────────────────────────────────────────────────────────┤
+│ Last capture preview                                         │
+│ ┌──────────────────────────────────────────────────────────┐ │
+│ │                    screenshot thumbnail                 │ │
+│ └──────────────────────────────────────────────────────────┘ │
+├──────────────────────────────────────────────────────────────┤
+│ Notes / Tags: [export dialog, table full, error state____]  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+This UI should optimize for three things:
+- low operator friction
+- obvious recording state
+- fast handoff into labeling
 
 ### Step 1: Screenshot Collection
 

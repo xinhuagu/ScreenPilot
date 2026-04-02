@@ -32,6 +32,7 @@ jobs:
           from screenpilot.core.app_router import AppRouter
           from screenpilot.training.collector import DataCollector
           from screenpilot.training.trainer import PackTrainer
+          from screenpilot.training.dataset_prep import split_dataset
           print('All imports OK')
           "
 

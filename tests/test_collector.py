@@ -2,7 +2,6 @@
 
 import json
 import tempfile
-from pathlib import Path
 
 import numpy as np
 
@@ -11,13 +10,12 @@ from screenpilot.training.collector import ActionEvent, CollectorConfig, DataCol
 
 def test_collector_session_lifecycle():
     with tempfile.TemporaryDirectory() as tmp:
-        config = CollectorConfig(output_dir=tmp)
+        config = CollectorConfig(output_dir=tmp, pack_name="test_app")
         collector = DataCollector(config)
 
         session_dir = collector.start_session("test_session")
         assert session_dir.exists()
         assert (session_dir / "images").is_dir()
-        assert (session_dir / "labels").is_dir()
 
         # Save a synthetic frame
         frame = np.zeros((100, 200, 4), dtype=np.uint8)
@@ -28,17 +26,15 @@ def test_collector_session_lifecycle():
         assert collector.frame_count == 1
 
         # Log an action
-        collector.log_action(ActionEvent(
-            timestamp=1000.5,
-            action_type="click",
-            x=100,
-            y=50,
-        ))
+        collector.log_action(
+            ActionEvent(timestamp=1000.5, action_type="click", x=100, y=50)
+        )
 
         # Finish session
-        summary = collector.finish_session()
+        summary = collector.finish_session(labels=["button", "input_field"])
         assert summary["frames"] == 1
         assert summary["actions"] == 1
+        assert summary["pack"] == "test_app"
 
         # Check action log
         log_path = session_dir / "actions.jsonl"
