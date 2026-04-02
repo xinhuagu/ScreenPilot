@@ -17,13 +17,8 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install dependencies
-        run: |
-          pip install mss numpy opencv-python-headless ultralytics onnxruntime \
-            Pillow pyyaml httpx anthropic pyautogui pytest ruff
-
-      - name: Install package
-        run: pip install -e .
+      - name: Install core + dev deps
+        run: pip install -e ".[dev]"
 
       - name: Smoke test imports
         run: |
@@ -32,6 +27,11 @@ jobs:
           from screenpilot.utils.geometry import Rect, Point, iou
           from screenpilot.utils.timing import FPSCounter, Timer
           from screenpilot.capture.change_detector import ChangeDetector, ChangeLevel
+          from screenpilot.core.application_pack import ApplicationPack, PackMetadata
+          from screenpilot.core.model_registry import ModelRegistry
+          from screenpilot.core.app_router import AppRouter
+          from screenpilot.training.collector import DataCollector
+          from screenpilot.training.trainer import PackTrainer
           print('All imports OK')
           "
 
