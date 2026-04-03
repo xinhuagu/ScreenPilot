@@ -48,5 +48,6 @@ class ActionResult:
     action: Action
     status: ActionStatus
     executed_at: Point | None = None  # Actual screen coords used
-    screen_changed: bool = False
+    screen_changed: bool = False  # True if ChangeDetector saw >= MINOR change
+    diff_score: float = 0.0  # Change magnitude (0.0 = none, higher = more)
     error: str = ""
