@@ -120,6 +120,26 @@ def main(argv: list[str] | None = None) -> None:
     learn_p.add_argument("--pack", type=str, required=True, help="Pack name (must have model)")
     learn_p.add_argument("--packs-dir", type=str, default="packs")
 
+    # --- task ---
+    task_p = sub.add_parser(
+        "task",
+        help="Execute a natural-language task on the screen (M6-lite)",
+    )
+    task_p.add_argument(
+        "task",
+        nargs="?",
+        default="",
+        help="Task description (omit for interactive mode)",
+    )
+    task_p.add_argument("--window", type=str, help="Window name to operate")
+    task_p.add_argument("--region", type=str, help="Manual region: left,top,width,height")
+    task_p.add_argument("--pack", type=str, default="", help="Force a specific pack name")
+    task_p.add_argument("--packs-dir", type=str, default="packs")
+    task_p.add_argument("--dry-run", action="store_true", help="Plan actions but do not execute")
+    task_p.add_argument(
+        "--interactive", "-i", action="store_true", help="Read tasks from stdin in a loop"
+    )
+
     # --- collect ---
     collect_p = sub.add_parser("collect", help="Collect training screenshots")
     collect_p.add_argument("--window", type=str, help="Window name to capture")
@@ -296,6 +316,42 @@ def main(argv: list[str] | None = None) -> None:
         print("\nNext steps:")
         print(f"  gazefy prep {result.output_dir}")
         print(f"  gazefy train --dataset {result.dataset_yaml} --pack-name <name>")
+
+    elif args.command == "task":
+        import logging
+        from pathlib import Path
+
+        from gazefy.config import GazefyConfig
+        from gazefy.core.orchestrator import Orchestrator
+        from gazefy.core.task_runner import TaskRunner
+        from gazefy.llm.interface import LLMInterface
+
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+        region = _resolve_region(args)
+        cfg = GazefyConfig(
+            region=region,
+            dry_run=args.dry_run,
+            window_name=args.window or "",
+        )
+        # Override pack search path
+        orch = Orchestrator(cfg)
+        orch.registry._packs_dir = Path(args.packs_dir)
+        if args.pack:
+            orch.router.force_pack(args.pack)
+
+        orch.setup()
+        runner = TaskRunner(orch, llm=LLMInterface())
+
+        try:
+            if args.interactive or not args.task:
+                runner.run_interactive()
+            else:
+                result = runner.run(args.task)
+                print("\n" + result.summary())
+                sys.exit(0 if result.status == "success" else 1)
+        finally:
+            orch.shutdown()
 
     elif args.command == "learn":
         from gazefy.core.learner import run_learn
