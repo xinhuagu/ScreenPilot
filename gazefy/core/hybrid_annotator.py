@@ -362,10 +362,10 @@ class HybridAnnotator:
 
     def _init_llm(self) -> None:
         try:
-            from gazefy.llm.client import get_client
+            from gazefy.llm.copilot import CopilotClient
 
-            self._client = get_client()
-            logger.info("Anthropic client ready (with retry)")
+            self._client = CopilotClient(model="gpt-4o")
+            logger.info("Copilot+gpt-4o client ready")
         except Exception as e:
             logger.warning("LLM init failed: %s", e)
 
@@ -444,33 +444,11 @@ class HybridAnnotator:
         )
 
         try:
-            from gazefy.llm.client import call_with_retry
-
-            response = call_with_retry(
-                lambda: self._client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=1024,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": "image/jpeg",
-                                        "data": frame_b64,
-                                    },
-                                },
-                            ],
-                        }
-                    ],
-                )
+            text = self._client.chat_with_image(
+                prompt, frame_b64, media_type="image/jpeg", max_tokens=1024
             )
-            text = response.content[0].text.strip()
         except Exception as e:
-            logger.warning("Claude API error: %s", e)
+            logger.warning("VLM API error: %s", e)
             return [
                 UIElement(
                     label=class_hint or "icon",
@@ -557,31 +535,9 @@ class HybridAnnotator:
         )
 
         try:
-            from gazefy.llm.client import call_with_retry
-
-            response = call_with_retry(
-                lambda: self._client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=4096,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": "image/jpeg",
-                                        "data": frame_b64,
-                                    },
-                                },
-                            ],
-                        }
-                    ],
-                )
+            text = self._client.chat_with_image(
+                prompt, frame_b64, media_type="image/jpeg", max_tokens=4096
             )
-            text = response.content[0].text.strip()
         except Exception as e:
             logger.warning("Fallback VLM error: %s", e)
             return []

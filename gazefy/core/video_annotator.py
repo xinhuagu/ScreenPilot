@@ -34,10 +34,22 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
+
+logger = logging.getLogger(__name__)
+
+
+def _call_vision_vlm(prompt: str, image_b64: str) -> str:
+    """Call a VLM with an image. Uses Copilot+gpt-4o by default."""
+    from gazefy.llm.copilot import CopilotClient
+
+    copilot = CopilotClient(model="gpt-4o")
+    return copilot.chat_with_image(prompt, image_b64, media_type="image/jpeg", max_tokens=4096)
+
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -419,33 +431,7 @@ For each element provide:
 Reply with JSON only, no explanation:
 {{"elements": [{{"label": "...", "class": "...", "bbox": [x1, y1, x2, y2]}}, ...]}}"""
 
-        from gazefy.llm.client import call_with_retry, get_client
-
-        client = get_client()
-        response = call_with_retry(
-            lambda: client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=4096,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": frame_b64,
-                                },
-                            },
-                        ],
-                    }
-                ],
-            )
-        )
-
-        text = response.content[0].text.strip()
+        text = _call_vision_vlm(prompt, frame_b64)
         return self._parse_elements(text, orig_w, orig_h)
 
     def _parse_elements(self, text: str, orig_w: int, orig_h: int) -> list[UIElement]:

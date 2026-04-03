@@ -74,52 +74,37 @@ def _crop_with_context(
 
 
 def _ask_vlm(icon_b64: str, context_b64: str, element_class: str) -> str:
-    """Send icon image to Claude Vision and get a label."""
-    from gazefy.llm.client import call_with_retry, get_client
+    """Send icon image to VLM and get a label. Uses Copilot+gpt-4o."""
+    from gazefy.llm.copilot import CopilotClient
 
-    client = get_client()
-    response = call_with_retry(
-        lambda: client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=100,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                f"This is a UI element (type: {element_class}) "
-                                "from a desktop application. "
-                                "The first image is the element itself. "
-                                "The second shows it in context.\n\n"
-                                "Reply with ONLY a short label, e.g. "
-                                "'Paintbrush Tool', 'Save Button'. "
-                                "No explanation."
-                            ),
-                        },
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": icon_b64,
-                            },
-                        },
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": context_b64,
-                            },
-                        },
-                    ],
-                }
-            ],
-        )
+    prompt = (
+        f"This is a UI element (type: {element_class}) "
+        "from a desktop application. "
+        "The first image is the element itself. "
+        "The second shows it in context.\n\n"
+        "Reply with ONLY a short label, e.g. "
+        "'Paintbrush Tool', 'Save Button'. "
+        "No explanation."
     )
-    return response.content[0].text.strip()
+    # gpt-4o vision: send both images in one message
+    copilot = CopilotClient(model="gpt-4o")
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{icon_b64}"},
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{context_b64}"},
+                },
+            ],
+        }
+    ]
+    return copilot.chat(messages, max_tokens=100)
 
 
 def run_learn(
