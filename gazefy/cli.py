@@ -83,6 +83,36 @@ def main(argv: list[str] | None = None) -> None:
         help="Device for GroundingDINO: cpu | mps | cuda",
     )
 
+    # --- convert-annotations ---
+    ca_p = sub.add_parser(
+        "convert-annotations",
+        help=(
+            "Convert annotations.jsonl + video.mp4 → YOLO training dataset "
+            "(images/ + labels/ + dataset.yaml)"
+        ),
+    )
+    ca_p.add_argument(
+        "session_dir",
+        help="Session directory containing video.mp4 + annotations.jsonl",
+    )
+    ca_p.add_argument(
+        "--output-dir",
+        type=str,
+        default="",
+        help="Output directory (default: session_dir/yolo_dataset)",
+    )
+    ca_p.add_argument(
+        "--classes",
+        nargs="+",
+        default=[],
+        help="Custom class list (overrides default 16-class taxonomy)",
+    )
+    ca_p.add_argument(
+        "--keep-unknown",
+        action="store_true",
+        help="Keep elements labelled 'unknown' / 'unknown icon' (excluded by default)",
+    )
+
     # --- learn ---
     learn_p = sub.add_parser("learn", help="Click UI elements, VLM identifies them")
     learn_p.add_argument("--window", type=str, help="Window name")
@@ -234,6 +264,38 @@ def main(argv: list[str] | None = None) -> None:
         total_el = sum(len(a.elements) for a in annotations)
         print(f"\nDone: {len(annotations)} frames annotated, {total_el} elements total")
         print(f"  → {session_dir}/annotations.jsonl")
+        print(f"\nNext: gazefy convert-annotations {session_dir}")
+
+    elif args.command == "convert-annotations":
+        from pathlib import Path
+
+        from gazefy.training.annotation_converter import AnnotationConverter
+
+        session_dir = Path(args.session_dir)
+        output_dir = Path(args.output_dir) if args.output_dir else None
+        class_names = args.classes if args.classes else None
+
+        converter = AnnotationConverter(skip_unknown=not args.keep_unknown)
+        print(f"Converting annotations: {session_dir}/")
+        if output_dir:
+            print(f"  Output:  {output_dir}/")
+        if class_names:
+            print(f"  Classes: {class_names}")
+        print()
+
+        result = converter.convert_session(
+            session_dir, output_dir=output_dir, class_names=class_names
+        )
+        print("Done:")
+        print(f"  Images:   {result.n_images}")
+        print(f"  Labels:   {result.n_labels}")
+        print(f"  Elements: {result.n_elements}")
+        if result.n_skipped:
+            print(f"  Skipped:  {result.n_skipped} frames (no valid elements)")
+        print(f"  Dataset:  {result.dataset_yaml}")
+        print("\nNext steps:")
+        print(f"  gazefy prep {result.output_dir}")
+        print(f"  gazefy train --dataset {result.dataset_yaml} --pack-name <name>")
 
     elif args.command == "learn":
         from gazefy.core.learner import run_learn
