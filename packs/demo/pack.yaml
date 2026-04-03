@@ -1,0 +1,10 @@
+conf_threshold: 0.5
+description: Auto-generated pack for demo
+input_size: 1024
+iou_threshold: 0.45
+labels: []
+model_file: model.pt
+name: demo
+version: 0.1.0
+window_match:
+- iTerm

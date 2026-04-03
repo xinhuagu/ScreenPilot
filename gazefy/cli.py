@@ -17,7 +17,10 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("list-windows", help="List visible macOS windows")
 
     # --- benchmark ---
-    sub.add_parser("benchmark", help="Run capture + change detection benchmark")
+    bench_p = sub.add_parser("benchmark", help="Run capture + change detection benchmark")
+    bench_p.add_argument("--window", type=str, help="Window name to benchmark")
+    bench_p.add_argument("--region", type=str, help="Manual region: left,top,width,height")
+    bench_p.add_argument("--duration", type=float, default=5.0, help="Duration in seconds")
 
     # --- monitor ---
     monitor_p = sub.add_parser("monitor", help="Real-time cursor-to-element monitoring")
@@ -72,11 +75,20 @@ def main(argv: list[str] | None = None) -> None:
         print_windows()
 
     elif args.command == "benchmark":
-        # Import inline — needs platform deps
-        import importlib
+        import importlib.util
+        from pathlib import Path
 
-        bench = importlib.import_module("scripts.benchmark")
-        bench.main()
+        region = _resolve_region(args)
+        # Load benchmark module from scripts/ regardless of cwd
+        script = Path(__file__).resolve().parent.parent / "scripts" / "benchmark.py"
+        spec = importlib.util.spec_from_file_location("benchmark", script)
+        bench = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bench)
+
+        bench.benchmark_capture(region, duration=args.duration)
+        bench.benchmark_change_detection(region, num_frames=200)
+        bench.benchmark_threaded_capture(region, duration=args.duration)
+        print(f"\n{'=' * 60}\nBENCHMARK COMPLETE\n{'=' * 60}")
 
     elif args.command == "monitor":
         from gazefy.core.monitor import run_monitor
