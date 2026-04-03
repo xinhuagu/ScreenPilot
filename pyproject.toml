@@ -43,6 +43,10 @@ knowledge = [
 ui = [
     "PySide6>=6.7",
 ]
+# Zero-shot UI detection via GroundingDINO (torch already pulled in by ultralytics)
+grounding = [
+    "transformers>=4.38",
+]
 # Development tools
 dev = [
     "pytest>=8.0",
@@ -50,7 +54,7 @@ dev = [
 ]
 # Everything for local development on macOS
 all = [
-    "gazefy[platform,ml,llm,training,ui,dev]",
+    "gazefy[platform,ml,llm,training,ui,grounding,dev]",
 ]
 
 [project.scripts]
