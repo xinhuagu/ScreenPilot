@@ -20,6 +20,11 @@ Enable AI-driven precise operation of professional software interfaces presented
 | UC5 | **Application-pack runtime**: Load app-specific detector/classifier/verifier/workflow packs without changing the shared runtime. | P0 — V1 foundation |
 | UC6 | **COBOL/Virtel terminal automation**: Automate mainframe operations through a browser-based 3270 terminal emulator. | P1 — V2 |
 | UC7 | **Knowledge-enriched operation**: Parse software HTML manual to enrich LLM context with element semantics and workflow definitions. | P1 — V2 |
+| UC8 | **Drift detection**: System monitors its own detection confidence and alerts the operator when the pack is degrading due to UI changes. | P1 — V2 |
+| UC9 | **Automatic re-annotation**: When drift is detected (or triggered manually), the system captures fresh screenshots and re-annotates them using the HybridAnnotator pipeline without operator involvement. | P1 — V2 |
+| UC10 | **Verification-driven training buffer**: Confirmed clicks (screen changed) are automatically collected as positive training samples; failed clicks become hard negatives. | P1 — V2 |
+| UC11 | **Active learning on uncertainty**: Low-confidence detections are batched to Claude Vision, which provides refined labels that feed directly into the fine-tune buffer. | P2 — V2 |
+| UC12 | **VLM→YOLO distillation**: HybridAnnotator pseudo-labels from raw screenshots are converted to YOLO format and used to fine-tune the pack detector without human annotation. | P2 — V2 |
 
 ## Non-Goals (explicitly out of scope)
 
@@ -28,6 +33,7 @@ Enable AI-driven precise operation of professional software interfaces presented
 - **Model training infrastructure**: No cloud training pipeline. Training happens locally or on a single GPU machine. Ultralytics CLI is sufficient.
 - **Full product GUI / dashboard**: V1 does not ship a general-purpose desktop console or web dashboard. A lightweight training-sample collector UI is in scope.
 - **Recording and replaying macros**: Gazefy is not a macro recorder. The LLM reasons about each step, adapting to screen state.
+- **Zero-annotation cold start**: The self-improving pipeline (V2) still requires an initial bootstrapped pack (100-200 annotated screenshots). Fully zero-annotation pack creation from scratch is out of scope.
 
 ## V1 Scope
 
@@ -371,6 +377,8 @@ Key architectural properties:
 | OCR cost inflates latency | Medium | OCR only on cropped candidates; cache OCR for stable elements |
 | pyautogui click doesn't register reliably in the target application surface | Low | Test in M1 on the initial target environment. Fallback: CGEvent |
 | Model overfits to current application theme/data | Low | Augmentation + periodic retraining as application updates |
+| VLM pseudo-labels contain errors that corrupt the fine-tune dataset | Medium | Use source trust weighting; validate on held-out set before hot-swapping the model |
+| Drift monitor triggers false re-annotation during normal UI transitions | Low | Enforce cooldown period and minimum window size before triggering |
 
 ### Open Questions
 
@@ -378,3 +386,29 @@ Key architectural properties:
 2. **Is the first-pack routing logic adequately robust with window metadata only, or do we need lightweight screenshot-based routing?** — Validate in M2 before onboarding a second pack.
 3. **How to handle application updates that change UI layout?** — Retrain model with updated screenshots. Assess how much layout change requires full retraining vs fine-tuning.
 4. **Is pyautogui's Retina handling sufficient or do we need CGEvent?** — Validate in M5 with click accuracy test.
+5. **What is the minimum fine-tune buffer size before retraining is worthwhile?** — Empirically measure on the first pack: how many new samples are needed to produce a measurable mAP improvement?
+6. **Can LoRA adapters for UI detection match full-model accuracy at 5% of parameters?** — Validate in M9 research phase using a multi-app dataset bootstrapped from HybridAnnotator.
+
+## V2 Roadmap: Self-Improving Pipeline
+
+V2 extends Gazefy from a "train once, deploy" model to a continuously improving system. The system generates its own training signal through live operation and VLM-based annotation, reducing the long-term maintenance burden to near zero.
+
+### V2 Use Cases
+
+| Use Case | Mechanism |
+|----------|-----------|
+| Pack confidence degrades after UI update | DriftMonitor detects drop → auto re-annotate → fine-tune → hot-swap |
+| New UI state never seen during initial training | ActiveLearner captures low-confidence detections → VLM labels them → fine-tune |
+| Operator wants to add a new application pack with minimal effort | HybridAnnotator runs on 50 screenshots → VLM pseudo-labels → LoRA fine-tune in ~30 min |
+| System learns which clicks reliably produce screen changes | RewardBuffer accumulates confirmed-click frames → positive training set grows automatically |
+
+### V2 Milestones
+
+| Milestone | Description |
+|-----------|-------------|
+| M8a | `RewardBuffer`: log confirmed/failed clicks with frames for training |
+| M8b | `AnnotationConverter`: transform annotations.jsonl → YOLO training format |
+| M8c | `DriftMonitor`: rolling confidence tracking + manual and automatic trigger |
+| M8d | `ActiveLearner`: uncertainty threshold sampling + batched VLM labeling |
+| M8e | `AutoTrainer`: wire all four into an end-to-end fine-tune pipeline |
+| M9 | LoRA adapter framework: universal base model + per-app adapter, bootstrapped from multi-app HybridAnnotator corpus |

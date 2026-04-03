@@ -44,6 +44,7 @@ UIMap (structured element map: buttons, menus, inputs, etc.)
 - **LLM-driven operation** — describe a task in natural language, Gazefy executes it
 - **VDI-optimized** — handles compression artifacts, network latency, and pixel-only environments
 - **Training pipeline included** — collect screenshots, annotate, train, package, deploy
+- **Self-improving pipeline** — verification loop as reward signal, VLM→YOLO distillation, drift detection, and active learning continuously refine the model without human annotation
 
 ## Quick Start
 
@@ -146,16 +147,70 @@ ruff check gazefy/
 ruff format gazefy/
 ```
 
+## CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `gazefy collector` | Open GUI data collection window |
+| `gazefy recorder` | Open floating semantic recorder widget |
+| `gazefy collect` | CLI screenshot collection |
+| `gazefy prep` | Split annotated dataset into train/val |
+| `gazefy train` | Train model and package as ApplicationPack |
+| `gazefy learn` | Click-to-label mode (VLM builds icon dictionary) |
+| `gazefy record-video` | Record screen as MP4 + mouse events |
+| `gazefy annotate-video` | Annotate video session (hybrid or VLM-only) |
+| `gazefy monitor` | Real-time cursor-to-element monitoring |
+| `gazefy replay` | Replay a recorded cursor trajectory |
+| `gazefy benchmark` | Capture + change detection benchmark |
+| `gazefy list-windows` | List visible windows |
+
+## Self-Improving Pipeline
+
+A key challenge with per-app YOLO models is that they degrade as UI themes, layouts, or VDI compression settings change. Gazefy addresses this with a self-improving loop that requires **no human annotation** after the initial pack is trained:
+
+```
+Live operation
+    ↓
+ActionExecutor verifies each click (screen_changed = True/False)
+    ↓
+Confirmed clicks → positive training samples
+Failed clicks    → hard negative examples
+    ↓
+HybridAnnotator runs on fresh screenshots periodically
+(GroundingDINO bboxes → EasyOCR text → Claude Vision for icons)
+    ↓
+Pseudo-labels → YOLO fine-tune buffer (VLM→YOLO distillation)
+    ↓
+Drift detector monitors mean YOLO confidence
+    ↓ (drops below threshold)
+Auto re-annotation → fine-tune → updated pack deployed
+```
+
+The five directions driving this:
+
+| Direction | Mechanism | Status |
+|-----------|-----------|--------|
+| **Verification as reward** | `screen_changed` flag from executor seeds training buffer | Built (M4/M5) |
+| **VLM→YOLO distillation** | HybridAnnotator pseudo-labels → YOLO training without human annotation | Built (M5); pipeline integration M8 |
+| **Drift detection** | Monitor mean detection confidence; trigger re-annotation on drop | Planned M8 |
+| **Active learning** | Low-confidence detections batched to Claude Vision → fine-tune buffer | Planned M8 |
+| **LoRA app adapters** | Frozen universal base model + tiny per-app LoRA adapter | V2 research |
+
+This is the "learn from doing" principle: the system gets better the more it operates, using its own action outcomes as the training signal.
+
 ## Milestones
 
 | Milestone | Status | Description |
 |-----------|--------|-------------|
-| M1: Capture + Change Detection | Done | Screen capture, frame diffing, benchmark validation |
-| M2: Pack Contract + Training Pipeline | Done | ApplicationPack, model registry, collect/prep/train CLI |
-| M3: First Pack Training | Next | Train first real model on target application |
-| M4: UIMap + Cursor Monitor | Planned | Real-time element tracking and cursor awareness |
-| M5: Action Execution + LLM | Planned | End-to-end task completion |
-| M6: Hardening | Planned | Error recovery, regression suite |
+| M1: Capture + Change Detection | ✅ Done | Screen capture, frame diffing, benchmark |
+| M2: Pack Contract + Training Pipeline | ✅ Done | ApplicationPack, collect/prep/train CLI |
+| M3: UIMap + Cursor Monitor | ✅ Done | IoU element tracking, 60 Hz cursor resolution |
+| M4: Action Execution + LLM | ✅ Done | pyautogui executor, Anthropic LLM interface |
+| M5: Recording + Annotation | ✅ Done | Semantic recorder, video pipeline, hybrid annotator |
+| M6: End-to-end Task Execution | 🔄 In progress | LLM→UIMap→Action orchestration loop |
+| M7: Hardening | Planned | Error recovery, multi-provider LLM, regression suite |
+| M8: Self-Improving Pipeline | Planned | Drift detection, VLM distillation, active learning loop |
+| M9: LoRA Adapters (V2) | Research | Universal base model + per-app LoRA fine-tuning |
 
 ## License
 

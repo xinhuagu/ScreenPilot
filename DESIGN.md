@@ -936,4 +936,228 @@ datasets/
 4. dry_run mode — LLM generates action commands without executing; manual review for correctness
 5. Training evaluation — mAP@0.5 target >90%, mAP@0.5:0.95 target >65%
 6. End-to-end regression suite — Fixed workflows measuring task success rate, false action rate, abort rate, and recovery success rate
+
+## Self-Improving Pipeline
+
+### Motivation
+
+The core limitation of the per-app YOLO model is that it is static: once trained, it does not adapt
+to UI theme changes, VDI compression shifts, or new UI states added by software updates. The goal
+of the self-improving pipeline is to close this gap with zero human annotation after the initial
+pack is trained.
+
+The underlying principle is "learn from doing": every time the system executes an action, it
+produces a signal — did the screen change? That signal is a reward. The system uses this reward,
+plus a VLM-based pseudo-labeling loop, to continuously refine its own perception model.
+
+### Architecture
+
+```
+Live operation
+    ↓
+ActionExecutor executes click / type / key
+    ↓
+_verify_change(): polls ChangeDetector at 20 Hz for up to verify_timeout_s
+    ↓
+ActionResult.screen_changed = True  →  positive training sample
+ActionResult.screen_changed = False →  hard negative (missed click)
+    ↓
+TrainingBuffer accumulates (frame, bbox, label, reward) tuples
+    ↓
+DriftMonitor tracks rolling mean YOLO confidence
+    ↓ (confidence < drift_threshold)
+AutoAnnotator runs HybridAnnotator on buffered frames
+    ├── GroundingDINO: zero-shot bboxes
+    ├── EasyOCR: text labels for text-heavy elements
+    └── Claude Vision: semantic labels for icon-only elements
+    ↓
+Pseudo-labels → YOLO training format (annotations.jsonl → YOLO .txt)
+    ↓
+Fine-tune YOLO on fine-tune buffer (LoRA or last-N-layer fine-tune)
+    ↓
+Updated model → hot-swap into running ApplicationPack
+```
+
+### Direction 1: Verification Loop as Reward Signal
+
+The `ActionExecutor` already captures a before-frame and polls for screen change after every
+action. The `ActionResult` already carries `screen_changed: bool` and `diff_score: float`.
+
+These signals map directly to training labels:
+
+| ActionResult | Training interpretation |
+|---|---|
+| `screen_changed=True, diff_score > 0.3` | Strong positive: element was correctly targeted |
+| `screen_changed=True, diff_score < 0.1` | Weak positive: some effect but low confidence |
+| `screen_changed=False` | Hard negative: click probably missed the intended target |
+| `status=ABORTED` (element disappeared) | Negative: UIMap stale, model missed an element |
+
+A `RewardBuffer` collects these results alongside the captured before-frame and the detection
+metadata (element_id, bbox, confidence). This buffer drives the fine-tuning pipeline.
+
+Implementation sketch (`gazefy/training/reward_buffer.py`):
+```python
+@dataclass
+class RewardSample:
+    frame: np.ndarray           # BGRA capture before action
+    bbox: list[int]             # [x1, y1, x2, y2] in pixel coords
+    class_name: str             # Detected class
+    confidence: float           # YOLO confidence at detection time
+    reward: float               # diff_score if screen_changed, else -1.0
+
+class RewardBuffer:
+    def add(self, result: ActionResult, frame: np.ndarray, element: UIElement) -> None: ...
+    def flush_positive(self, min_reward: float = 0.1) -> list[RewardSample]: ...
+    def flush_hard_negatives(self) -> list[RewardSample]: ...
+```
+
+### Direction 2: VLM→YOLO Knowledge Distillation
+
+`HybridAnnotator` already produces `annotations.jsonl` with `source` tags (`ocr`, `vlm`,
+`yolo+ocr`). The missing piece is a converter that transforms these annotations into YOLO training
+format so they can drive a fine-tuning run without any human labeling.
+
+Pipeline:
+
+```
+Fresh screenshots (collected during live operation or triggered by drift)
+    ↓
+HybridAnnotator.annotate_session()
+    → annotations.jsonl  (label, class, bbox, source)
+    ↓
+AnnotationConverter.to_yolo(annotations.jsonl, image_dir)
+    → labels/<image_name>.txt  (YOLO normalized coords)
+    ↓
+gazefy train --dataset <converted_dir> --pack <name> --fine-tune
+```
+
+The `source` field determines trust weighting:
+- `ocr`: high trust (OCR text is deterministic)
+- `yolo+ocr`: high trust (model + OCR agree)
+- `vlm`: medium trust (VLM is confident but not ground truth)
+- `yolo+vlm`: medium trust
+
+Low-trust samples are down-weighted in the training loss or filtered below a confidence threshold.
+
+### Direction 3: Drift Detection + Auto Re-annotation
+
+The YOLO model's mean detection confidence is a reliable proxy for "is this model still working
+correctly on the current screen?"
+
+`DriftMonitor` runs as a lightweight sidecar in the main loop:
+
+```python
+class DriftMonitor:
+    window_size: int = 200         # Rolling window of recent detections
+    drift_threshold: float = 0.55  # Trigger if mean confidence drops below this
+    cooldown_s: float = 3600.0     # Minimum time between re-annotation triggers
+
+    def record(self, detections: list[Detection]) -> None: ...
+    def is_drifted(self) -> bool: ...
+    def mean_confidence(self) -> float: ...
+```
+
+When `is_drifted()` returns True, the orchestrator:
+1. Captures a batch of representative screenshots (N=50 covering recent UIMap states)
+2. Runs HybridAnnotator on the batch (GroundingDINO + EasyOCR + Claude Vision)
+3. Converts output to YOLO format
+4. Schedules a fine-tuning job (background process, does not interrupt live operation)
+5. Hot-swaps the updated model into the running pack once training completes
+
+The re-annotation trigger can also be set manually (`gazefy drift-check --pack my_app`).
+
+### Direction 4: Active Learning on Uncertainty
+
+Not all detections are equally worth retraining on. The most valuable samples for improving the
+model are the ones where the model is least confident.
+
+`ActiveLearner` filters the detection stream for high-uncertainty cases:
+
+```python
+class ActiveLearner:
+    uncertainty_threshold: float = 0.45  # Detections below this are candidates
+    batch_size: int = 20                  # Send to VLM in batches
+
+    def should_query(self, detection: Detection) -> bool:
+        return detection.confidence < self.uncertainty_threshold
+
+    def query_vlm(self, frame: np.ndarray, candidates: list[Detection]) -> list[UIElement]:
+        # Crop each candidate, send batch to Claude Vision
+        # Returns refined labels + classes
+        ...
+```
+
+The VLM query uses the same icon-labeling approach as `HybridAnnotator._label_icons_on_frame()`:
+number the candidate bboxes, send one image with all boxes drawn, ask Claude to name each one.
+This batches cost across many candidates per API call.
+
+Confirmed VLM labels feed directly into the fine-tune buffer with high trust weight.
+
+### Direction 5: Universal Base + App-Specific LoRA Adapter (V2)
+
+For V2, the goal is to replace the "train from scratch per app" model with a frozen universal UI
+detector plus a tiny per-app adapter layer (LoRA).
+
+Architecture:
+```
+Universal base YOLO (trained on diverse UI screenshots from many apps)
+    ↓
+Frozen backbone + neck
+    ↓
+Per-app LoRA adapter (~1-5% of base model parameters)
+    ↓
+App-specific detection head
+```
+
+Benefits:
+- Initial pack setup requires only LoRA fine-tuning (~50 samples vs ~200 for full training)
+- Base model updates improve all packs simultaneously
+- Adapters are tiny (~10 MB vs ~100 MB for full model) — fast to update and distribute
+
+The universal base can be bootstrapped by aggregating pseudo-labels from HybridAnnotator runs
+across multiple apps, creating a large diverse UI screenshot corpus without human annotation.
+
+### Data Flow for the Self-Improving Loop
+
+```
+gazefy/
+├── training/
+│   ├── reward_buffer.py     RewardSample + RewardBuffer (Direction 1)
+│   ├── annotation_converter.py  annotations.jsonl → YOLO .txt (Direction 2)
+│   ├── drift_monitor.py     DriftMonitor: rolling confidence tracking (Direction 3)
+│   ├── active_learner.py    ActiveLearner: uncertainty sampling + VLM query (Direction 4)
+│   └── auto_trainer.py      Wires all four directions into one fine-tune pipeline
+```
+
+`AutoTrainer` coordinates the full cycle:
+1. Consumes `RewardBuffer` and `ActiveLearner` output
+2. Calls `AnnotationConverter` on `HybridAnnotator` output
+3. Runs `gazefy train --fine-tune` when buffer crosses a size threshold or drift is detected
+4. Notifies `ModelRegistry` to hot-swap the updated pack
+
+### Implementation Phases
+
+| Phase | Deliverable | Depends on |
+|---|---|---|
+| M8a | `RewardBuffer` + logging pipeline | ActionExecutor (done) |
+| M8b | `AnnotationConverter` (annotations.jsonl → YOLO) | HybridAnnotator (done) |
+| M8c | `DriftMonitor` + manual trigger CLI | UIDetector (done) |
+| M8d | `ActiveLearner` + VLM uncertainty query | HybridAnnotator (done) |
+| M8e | `AutoTrainer` wiring all four | M8a–M8d |
+| M9 | LoRA adapter framework + universal base model | M8e + large multi-app corpus |
+
+### Connection to Karpathy's Autoresearch Principle
+
+The self-improving pipeline applies the same core insight from recent self-improving AI research:
+**the system generates its own training signal through interaction with the world**.
+
+- Direction 1 (verification as reward) mirrors reinforcement learning from environment feedback
+- Direction 2 (VLM distillation) mirrors knowledge distillation from a larger teacher model
+- Direction 3 (drift detection) mirrors distribution shift monitoring in production ML systems
+- Direction 4 (active learning) mirrors focused data collection on model weaknesses
+- Direction 5 (LoRA adapters) mirrors parameter-efficient fine-tuning research (LoRA, QLoRA)
+
+The key insight specific to Gazefy: the "environment" is the target application itself. Every
+time the executor clicks a button and the screen changes, the system has learned something. It
+does not need a human to tell it whether the click was correct — the screen feedback is the label.
 7. Failure injection — Simulate VDI lag, stale UIMap, OCR mismatch, and delayed repaint to verify state-machine recovery behavior
