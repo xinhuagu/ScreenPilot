@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -37,6 +38,20 @@ def main(argv: list[str] | None = None) -> None:
     replay_p = sub.add_parser("replay", help="Replay a recorded cursor trajectory")
     replay_p.add_argument("recording", help="Path to .jsonl recording file")
     replay_p.add_argument("--speed", type=float, default=1.0, help="Playback speed (2.0 = 2x)")
+
+    # --- record-video ---
+    rv_p = sub.add_parser(
+        "record-video", help="Record screen as video + click events (no YOLO needed)"
+    )
+    rv_p.add_argument("--fps", type=int, default=10, help="Recording frame rate")
+    rv_p.add_argument("--monitor", type=int, default=1, help="Monitor index (1=primary)")
+    rv_p.add_argument("--output-dir", type=str, default="recordings")
+
+    # --- annotate-video ---
+    av_p = sub.add_parser(
+        "annotate-video", help="Annotate a video session with VLM (fills semantic labels)"
+    )
+    av_p.add_argument("session_dir", help="Path to session directory (contains video.mp4 + events.jsonl)")
 
     # --- learn ---
     learn_p = sub.add_parser("learn", help="Click UI elements, VLM identifies them")
@@ -122,6 +137,50 @@ def main(argv: list[str] | None = None) -> None:
             record=args.record,
             record_dir=args.record_dir,
         )
+
+    elif args.command == "record-video":
+        import datetime
+        from gazefy.core.video_recorder import VideoRecorder
+
+        rec_dir = Path(args.output_dir)
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir = rec_dir / f"session_{ts}"
+        recorder = VideoRecorder(fps=args.fps, monitor_index=args.monitor)
+
+        click_count = 0
+
+        def on_click(ev: dict) -> None:
+            nonlocal click_count
+            click_count += 1
+            print(f"  CLICK {ev['click']} at ({ev['x']}, {ev['y']})  [total: {click_count}]")
+
+        recorder.start(session_dir, on_click=on_click)
+        print(f"Recording to {session_dir}/")
+        print(f"  FPS: {args.fps}   Monitor: {args.monitor}")
+        print("  Press Ctrl+C to stop.\n")
+        try:
+            while True:
+                import time
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
+        recorder.stop()
+        print(f"\nSaved: {session_dir}  ({click_count} clicks)")
+        print(f"Annotate with: gazefy annotate-video {session_dir}")
+
+    elif args.command == "annotate-video":
+        from gazefy.core.video_annotator import VideoAnnotator
+
+        session_dir = Path(args.session_dir)
+        annotator = VideoAnnotator()
+
+        def on_progress(current: int, total: int, ann) -> None:
+            print(f"  [{current}/{total}] t={ann.t:.1f}s → {ann.label!r} [{ann.element_class}]")
+
+        print(f"Annotating {session_dir}/")
+        print("  Sending click frames to Claude Vision...\n")
+        annotations = annotator.annotate_session(session_dir, on_progress=on_progress)
+        print(f"\nDone: {len(annotations)} annotations → {session_dir}/annotations.jsonl")
 
     elif args.command == "learn":
         from gazefy.core.learner import run_learn

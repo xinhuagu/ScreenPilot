@@ -3,12 +3,16 @@
 Records mouse movements and clicks as element identities, not raw coordinates.
 Replay finds elements by class+text using live YOLO detection.
 
-┌─────────────────────────────────────┐
-│ Gazefy Recorder             ● REC  │
-│ [Start] [Stop] [Replay] [Open]     │
-│ Pack: [_________]  Frames: 0 00:00 │
-│ → [button] "Save"                  │
-└─────────────────────────────────────┘
+Video mode: records screen as MP4 + click events (no YOLO required).
+Annotate: after recording, VLM analyses video frames at each click → fills semantic labels.
+
+┌──────────────────────────────────────────┐
+│ Gazefy Recorder                 ● REC   │
+│ Pack: [_________]      [☑ Video mode]   │
+│ [Start] [Stop] [Replay] [Open] [Annotate]│
+│ Frames: 0   00:00                        │
+│ → [button] "Save"                        │
+└──────────────────────────────────────────┘
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -42,6 +47,7 @@ class RecorderWidget(QMainWindow):
         super().__init__()
         self._recording = False
         self._replaying = False
+        self._annotating = False
         self._frames: list[dict] = []
         self._record_start = 0.0
         self._record_path: Path | None = None
@@ -51,6 +57,9 @@ class RecorderWidget(QMainWindow):
         self._ocr = None
         self._tracker = None
         self._ui_map = None
+        # Video mode
+        self._video_recorder = None
+        self._video_session_dir: Path | None = None
 
         self._init_ui()
         self._frame_update.connect(self._on_frame_update)
@@ -60,7 +69,7 @@ class RecorderWidget(QMainWindow):
 
     def _init_ui(self) -> None:
         self.setWindowTitle("Gazefy Recorder")
-        self.setFixedSize(380, 120)
+        self.setFixedSize(480, 140)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
 
         central = QWidget()
@@ -69,12 +78,18 @@ class RecorderWidget(QMainWindow):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(4)
 
-        # Pack selector row
+        # Pack selector row + video mode toggle
         pack_row = QHBoxLayout()
         pack_row.addWidget(QLabel("Pack:"))
         self.pack_combo = QComboBox()
-        self.pack_combo.setMinimumWidth(150)
+        self.pack_combo.setMinimumWidth(140)
         pack_row.addWidget(self.pack_combo, 1)
+        self.video_check = QCheckBox("Video mode")
+        self.video_check.setToolTip(
+            "Record screen as MP4 + click events.\n"
+            "No YOLO model needed. Annotate semantics later with VLM."
+        )
+        pack_row.addWidget(self.video_check)
         layout.addLayout(pack_row)
 
         # Controls row
@@ -83,9 +98,12 @@ class RecorderWidget(QMainWindow):
         self.stop_btn = QPushButton("Stop")
         self.replay_btn = QPushButton("Replay")
         self.open_btn = QPushButton("Open")
+        self.annotate_btn = QPushButton("Annotate")
         self.stop_btn.setEnabled(False)
         self.replay_btn.setEnabled(False)
-        for btn in [self.start_btn, self.stop_btn, self.replay_btn, self.open_btn]:
+        self.annotate_btn.setEnabled(False)
+        self.annotate_btn.setToolTip("Analyse video frames with VLM to fill in semantic labels")
+        for btn in [self.start_btn, self.stop_btn, self.replay_btn, self.open_btn, self.annotate_btn]:
             btn.setFixedHeight(28)
             ctrl.addWidget(btn)
         layout.addLayout(ctrl)
@@ -94,7 +112,7 @@ class RecorderWidget(QMainWindow):
         status = QHBoxLayout()
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("font-weight: bold;")
-        self.frame_label = QLabel("Frames: 0")
+        self.frame_label = QLabel("Clicks: 0")
         self.time_label = QLabel("00:00")
         status.addWidget(self.status_label)
         status.addWidget(self.frame_label)
@@ -102,7 +120,7 @@ class RecorderWidget(QMainWindow):
         status.addStretch()
         layout.addLayout(status)
 
-        # Element display
+        # Element / info display
         self.element_label = QLabel("")
         self.element_label.setStyleSheet("color: #4CAF50; font-size: 12px;")
         layout.addWidget(self.element_label)
@@ -112,6 +130,8 @@ class RecorderWidget(QMainWindow):
         self.stop_btn.clicked.connect(self._on_stop)
         self.replay_btn.clicked.connect(self._on_replay)
         self.open_btn.clicked.connect(self._on_open)
+        self.annotate_btn.clicked.connect(self._on_annotate)
+        self.video_check.toggled.connect(self._on_video_mode_toggled)
 
     def _scan_packs(self) -> None:
         packs_dir = Path("packs")
@@ -197,10 +217,54 @@ class RecorderWidget(QMainWindow):
 
     # --- Actions ---
 
+    def _on_video_mode_toggled(self, checked: bool) -> None:
+        # In video mode, YOLO model is optional
+        self.pack_combo.setEnabled(not checked or True)  # always enabled
+
     def _on_start(self) -> None:
         if self._recording:
             return
 
+        if self.video_check.isChecked():
+            self._start_video_mode()
+        else:
+            self._start_semantic_mode()
+
+    def _start_video_mode(self) -> None:
+        """Start recording: screen video + click events only (no YOLO)."""
+        from gazefy.core.video_recorder import VideoRecorder
+
+        rec_dir = Path("recordings")
+        import datetime
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir = rec_dir / f"session_{ts}"
+
+        self._video_recorder = VideoRecorder(fps=10)
+        self._recording = True
+        self._record_start = time.monotonic()
+        self._video_session_dir = session_dir
+
+        def on_click(ev: dict) -> None:
+            self._frame_update.emit(
+                self._video_recorder.click_count if self._video_recorder else 0,
+                f"CLICK {ev['click']} at ({ev['x']}, {ev['y']})",
+            )
+
+        self._video_recorder.start(session_dir, on_click=on_click)
+
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.replay_btn.setEnabled(False)
+        self.annotate_btn.setEnabled(False)
+        self.pack_combo.setEnabled(False)
+        self.video_check.setEnabled(False)
+        self.status_label.setText("● REC (video)")
+        self.status_label.setStyleSheet("font-weight: bold; color: red;")
+        self._elapsed_timer.start(200)
+
+    def _start_semantic_mode(self) -> None:
+        """Start recording: semantic JSONL mode (existing behaviour)."""
         has_model = self._load_pipeline()
         self._recording = True
         self._frames = []
@@ -212,7 +276,9 @@ class RecorderWidget(QMainWindow):
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.replay_btn.setEnabled(False)
+        self.annotate_btn.setEnabled(False)
         self.pack_combo.setEnabled(False)
+        self.video_check.setEnabled(False)
         label = "● REC (semantic)" if has_model else "● REC (coords only)"
         self.status_label.setText(label)
         self.status_label.setStyleSheet("font-weight: bold; color: red;")
@@ -227,22 +293,79 @@ class RecorderWidget(QMainWindow):
         self._recording = False
         self._elapsed_timer.stop()
 
-        if self._record_path and self._frames:
-            with open(self._record_path, "w") as f:
-                for frame in self._frames:
-                    f.write(json.dumps(frame) + "\n")
+        if self.video_check.isChecked() and self._video_recorder:
+            session_dir = self._video_recorder.stop()
+            n_clicks = self._video_recorder.click_count
+            self._video_recorder = None
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.replay_btn.setEnabled(False)
+            self.annotate_btn.setEnabled(True)
+            self.pack_combo.setEnabled(True)
+            self.video_check.setEnabled(True)
+            self.status_label.setText(f"Saved ({n_clicks} clicks)")
+            self.status_label.setStyleSheet("font-weight: bold; color: #333;")
+            self.element_label.setText(f"→ {session_dir}")
+            self.frame_label.setText(f"Clicks: {n_clicks}")
+        else:
+            if self._record_path and self._frames:
+                with open(self._record_path, "w") as f:
+                    for frame in self._frames:
+                        f.write(json.dumps(frame) + "\n")
 
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.replay_btn.setEnabled(bool(self._frames))
-        self.pack_combo.setEnabled(True)
-        n_clicks = sum(1 for f in self._frames if f.get("click"))
-        n_semantic = sum(1 for f in self._frames if f.get("element_class"))
-        self.status_label.setText(
-            f"Saved ({len(self._frames)} frames, {n_clicks} clicks, {n_semantic} semantic)"
-        )
-        self.status_label.setStyleSheet("font-weight: bold; color: #333;")
-        self.element_label.setText(f"→ {self._record_path}")
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.replay_btn.setEnabled(bool(self._frames))
+            self.annotate_btn.setEnabled(False)
+            self.pack_combo.setEnabled(True)
+            self.video_check.setEnabled(True)
+            n_clicks = sum(1 for f in self._frames if f.get("click"))
+            n_semantic = sum(1 for f in self._frames if f.get("element_class"))
+            self.status_label.setText(
+                f"Saved ({len(self._frames)} frames, {n_clicks} clicks, {n_semantic} semantic)"
+            )
+            self.status_label.setStyleSheet("font-weight: bold; color: #333;")
+            self.element_label.setText(f"→ {self._record_path}")
+
+    def _on_annotate(self) -> None:
+        """Run VLM annotation on the last video session."""
+        if self._annotating:
+            return
+        if self._video_session_dir is None or not self._video_session_dir.exists():
+            # Let user pick a session directory
+            from PySide6.QtWidgets import QFileDialog
+
+            path = QFileDialog.getExistingDirectory(self, "Select session directory", "recordings")
+            if not path:
+                return
+            self._video_session_dir = Path(path)
+
+        self._annotating = True
+        self.annotate_btn.setEnabled(False)
+        self.start_btn.setEnabled(False)
+        self.status_label.setText("Annotating…")
+        self.status_label.setStyleSheet("font-weight: bold; color: #FF8C00;")
+
+        session_dir = self._video_session_dir
+
+        def run() -> None:
+            from gazefy.core.video_annotator import VideoAnnotator
+
+            annotator = VideoAnnotator()
+
+            def on_progress(current: int, total: int, ann) -> None:
+                self._frame_update.emit(current, f"{current}/{total} → {ann.label} [{ann.element_class}]")
+
+            try:
+                annotations = annotator.annotate_session(session_dir, on_progress=on_progress)
+                self._frame_update.emit(len(annotations), f"Done: {len(annotations)} annotations")
+            except Exception as e:
+                self._frame_update.emit(0, f"Annotation error: {e}")
+            finally:
+                self._annotating = False
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
 
     def _on_replay(self) -> None:
         if self._replaying or not self._frames:
@@ -441,18 +564,43 @@ class RecorderWidget(QMainWindow):
     # --- UI updates ---
 
     def _on_frame_update(self, count: int, desc: str) -> None:
-        self.frame_label.setText(f"Frames: {count}")
-        if desc == "done":
-            self.status_label.setText("Replay done")
-            self.status_label.setStyleSheet("font-weight: bold; color: #333;")
-            self.replay_btn.setEnabled(True)
-            self.start_btn.setEnabled(True)
-        else:
+        if self.video_check.isChecked() and self._annotating:
+            # During annotation: show progress in status, count in frame_label
+            self.frame_label.setText(f"Ann: {count}")
+            if desc.startswith("Done:"):
+                self.status_label.setText(desc)
+                self.status_label.setStyleSheet("font-weight: bold; color: green;")
+                self.annotate_btn.setEnabled(True)
+                self.start_btn.setEnabled(True)
+                self._annotating = False
+            elif desc.startswith("Annotation error"):
+                self.status_label.setText(desc)
+                self.status_label.setStyleSheet("font-weight: bold; color: red;")
+                self.annotate_btn.setEnabled(True)
+                self.start_btn.setEnabled(True)
+                self._annotating = False
+            else:
+                self.element_label.setText(desc)
+        elif self.video_check.isChecked():
+            # During video recording: show click count
+            self.frame_label.setText(f"Clicks: {count}")
             self.element_label.setText(desc)
+        else:
+            self.frame_label.setText(f"Frames: {count}")
+            if desc == "done":
+                self.status_label.setText("Replay done")
+                self.status_label.setStyleSheet("font-weight: bold; color: #333;")
+                self.replay_btn.setEnabled(True)
+                self.start_btn.setEnabled(True)
+            else:
+                self.element_label.setText(desc)
 
     def _update_elapsed(self) -> None:
         if self._recording:
-            elapsed = time.monotonic() - self._record_start
+            if self.video_check.isChecked() and self._video_recorder:
+                elapsed = self._video_recorder.elapsed
+            else:
+                elapsed = time.monotonic() - self._record_start
             m, s = divmod(int(elapsed), 60)
             self.time_label.setText(f"{m:02d}:{s:02d}")
 
