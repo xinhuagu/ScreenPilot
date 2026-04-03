@@ -122,7 +122,13 @@ class RecorderWidget(QMainWindow):
         self.replay_btn.setEnabled(False)
         self.annotate_btn.setEnabled(False)
         self.annotate_btn.setToolTip("Analyse video frames with VLM to fill in semantic labels")
-        for btn in [self.start_btn, self.stop_btn, self.replay_btn, self.open_btn, self.annotate_btn]:
+        for btn in [
+            self.start_btn,
+            self.stop_btn,
+            self.replay_btn,
+            self.open_btn,
+            self.annotate_btn,
+        ]:
             btn.setFixedHeight(28)
             ctrl.addWidget(btn)
         layout.addLayout(ctrl)
@@ -377,9 +383,11 @@ class RecorderWidget(QMainWindow):
             try:
                 if detector_mode == "grounding":
                     from gazefy.core.hybrid_annotator import HybridAnnotator
+
                     annotator = HybridAnnotator(pack_dir=pack_dir)
                 else:
                     from gazefy.core.video_annotator import VideoAnnotator
+
                     annotator = VideoAnnotator()
 
                 annotations = annotator.annotate_session(session_dir, on_progress=on_progress)

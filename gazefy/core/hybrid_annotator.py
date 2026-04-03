@@ -54,12 +54,13 @@ logger = logging.getLogger(__name__)
 # Data models  (same as video_annotator for compatibility)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class UIElement:
     label: str
     element_class: str
-    bbox: list[int]         # [x1, y1, x2, y2] original pixels
-    source: str = "vlm"     # "ocr" | "vlm" | "yolo+ocr" | "yolo+vlm"
+    bbox: list[int]  # [x1, y1, x2, y2] original pixels
+    source: str = "vlm"  # "ocr" | "vlm" | "yolo+ocr" | "yolo+vlm"
 
 
 @dataclass
@@ -84,11 +85,12 @@ class FrameAnnotation:
 # HybridAnnotator
 # ---------------------------------------------------------------------------
 
+
 class HybridAnnotator:
     """Three-stage annotator: detector → OCR → LLM (icons only)."""
 
-    _MAX_VLM_WIDTH = 1280      # resize before sending to Claude
-    _MAX_ICONS_PER_CALL = 30   # max numbered boxes per Claude call
+    _MAX_VLM_WIDTH = 1280  # resize before sending to Claude
+    _MAX_ICONS_PER_CALL = 30  # max numbered boxes per Claude call
 
     def __init__(
         self,
@@ -111,10 +113,10 @@ class HybridAnnotator:
         self.grounding_device = grounding_device
         self.pack_dir = Path(pack_dir) if pack_dir else None
 
-        self._grounding: object | None = None   # GroundingDetector
-        self._yolo: object | None = None        # UIDetector
-        self._ocr: object | None = None         # ElementOCR
-        self._client = None                      # anthropic.Anthropic
+        self._grounding: object | None = None  # GroundingDetector
+        self._yolo: object | None = None  # UIDetector
+        self._ocr: object | None = None  # ElementOCR
+        self._client = None  # anthropic.Anthropic
 
     # ------------------------------------------------------------------
     # Public API
@@ -170,8 +172,9 @@ class HybridAnnotator:
                 action = kf.get("action")
 
                 if on_progress:
-                    on_progress(i + 1, len(key_frames),
-                                f"t={t:.1f}s  {action or 'scan'}  ({mx},{my})")
+                    on_progress(
+                        i + 1, len(key_frames), f"t={t:.1f}s  {action or 'scan'}  ({mx},{my})"
+                    )
 
                 frame = self._get_frame_at_time(cap, t, fps, frame_times, total_frames)
                 if frame is None:
@@ -184,9 +187,11 @@ class HybridAnnotator:
                 n_ocr = sum(1 for e in elements if "ocr" in e.source)
                 n_vlm = sum(1 for e in elements if "vlm" in e.source)
                 if on_progress:
-                    on_progress(i + 1, len(key_frames),
-                                f"t={t:.1f}s → {len(elements)} elements "
-                                f"({n_ocr} OCR, {n_vlm} VLM)")
+                    on_progress(
+                        i + 1,
+                        len(key_frames),
+                        f"t={t:.1f}s → {len(elements)} elements ({n_ocr} OCR, {n_vlm} VLM)",
+                    )
         finally:
             cap.release()
 
@@ -212,7 +217,7 @@ class HybridAnnotator:
         orig_h, orig_w = frame.shape[:2]
 
         # --- Stage 1: detect bboxes ---
-        detected = self._detect_bboxes(frame)   # list of (bbox, class_hint)
+        detected = self._detect_bboxes(frame)  # list of (bbox, class_hint)
 
         if not detected:
             # No detector available: fall back to full-frame VLM
@@ -227,12 +232,14 @@ class HybridAnnotator:
             if text:
                 # Readable text → label directly from OCR
                 el_class = self._infer_class_from_text(bbox, class_hint)
-                text_elements.append(UIElement(
-                    label=text,
-                    element_class=el_class,
-                    bbox=bbox,
-                    source="ocr" if not class_hint else "yolo+ocr",
-                ))
+                text_elements.append(
+                    UIElement(
+                        label=text,
+                        element_class=el_class,
+                        bbox=bbox,
+                        source="ocr" if not class_hint else "yolo+ocr",
+                    )
+                )
             else:
                 # No text → send to VLM
                 icon_items.append((idx, bbox, class_hint))
@@ -279,8 +286,10 @@ class HybridAnnotator:
         if self._yolo is not None:
             try:
                 dets = self._yolo.detect(frame)
-                return [([int(d.bbox.x1), int(d.bbox.y1), int(d.bbox.x2), int(d.bbox.y2)],
-                          d.class_name) for d in dets]
+                return [
+                    ([int(d.bbox.x1), int(d.bbox.y1), int(d.bbox.x2), int(d.bbox.y2)], d.class_name)
+                    for d in dets
+                ]
             except Exception as e:
                 logger.warning("YOLO detection failed: %s", e)
 
@@ -335,6 +344,7 @@ class HybridAnnotator:
     def _init_llm(self) -> None:
         try:
             import anthropic
+
             from gazefy.llm.credentials import get_api_key
 
             api_key = get_api_key()
@@ -358,7 +368,7 @@ class HybridAnnotator:
         elements: list[UIElement] = []
         # Process in batches
         for batch_start in range(0, len(icon_items), self._MAX_ICONS_PER_CALL):
-            batch = icon_items[batch_start: batch_start + self._MAX_ICONS_PER_CALL]
+            batch = icon_items[batch_start : batch_start + self._MAX_ICONS_PER_CALL]
             batch_elements = self._label_icon_batch(frame, batch, offset=batch_start)
             elements.extend(batch_elements)
         return elements
@@ -398,21 +408,23 @@ class HybridAnnotator:
         h, w = vis.shape[:2]
         if w > self._MAX_VLM_WIDTH:
             scale = self._MAX_VLM_WIDTH / w
-            vis = cv2.resize(vis, (self._MAX_VLM_WIDTH, int(h * scale)), interpolation=cv2.INTER_AREA)
+            vis = cv2.resize(
+                vis, (self._MAX_VLM_WIDTH, int(h * scale)), interpolation=cv2.INTER_AREA
+            )
 
         _, buf = cv2.imencode(".jpg", vis, [cv2.IMWRITE_JPEG_QUALITY, 85])
         frame_b64 = base64.standard_b64encode(buf).decode()
 
         n = len(batch)
         class_hints = [class_hint or "icon" for _, _, class_hint in batch]
-        hint_str = ", ".join(f"{i+1}={h}" for i, h in enumerate(class_hints))
+        hint_str = ", ".join(f"{i + 1}={h}" for i, h in enumerate(class_hints))
 
         prompt = (
             f"This is a desktop application screenshot. "
             f"{n} UI elements are marked with numbered red boxes ({hint_str}).\n"
-            "These elements have no readable text — they are icons, symbols, or graphic buttons.\n\n"
+            "These elements have no readable text — icons, symbols, or graphic buttons.\n\n"
             "For each numbered element, provide:\n"
-            '- "label": short descriptive name, e.g. "Pencil Tool", "Undo", "File Menu", "Close Tab"\n'
+            '- "label": short name, e.g. "Pencil Tool", "Undo", "File Menu", "Close Tab"\n'
             '- "class": one of icon | button | menu | toolbar | scrollbar | other\n\n'
             "Reply with JSON only:\n"
             '{"labels": [{"n": 1, "label": "...", "class": "..."}, ...]}'
@@ -443,8 +455,12 @@ class HybridAnnotator:
         except Exception as e:
             logger.warning("Claude API error: %s", e)
             return [
-                UIElement(label=class_hint or "icon", element_class=class_hint or "icon",
-                          bbox=bbox, source="grounding")
+                UIElement(
+                    label=class_hint or "icon",
+                    element_class=class_hint or "icon",
+                    bbox=bbox,
+                    source="grounding",
+                )
                 for _, bbox, class_hint in batch
             ]
 
@@ -454,13 +470,16 @@ class HybridAnnotator:
         elements: list[UIElement] = []
         for local_n, (_, bbox, class_hint) in enumerate(batch, start=1):
             item = label_map.get(local_n, {})
-            source = "yolo+vlm" if class_hint and class_hint not in ("icon", "button", "menu") else "vlm"
-            elements.append(UIElement(
-                label=item.get("label", class_hint or "unknown"),
-                element_class=item.get("class", class_hint or "icon"),
-                bbox=bbox,
-                source=source,
-            ))
+            known = ("icon", "button", "menu")
+            source = "yolo+vlm" if class_hint and class_hint not in known else "vlm"
+            elements.append(
+                UIElement(
+                    label=item.get("label", class_hint or "unknown"),
+                    element_class=item.get("class", class_hint or "icon"),
+                    bbox=bbox,
+                    source=source,
+                )
+            )
         return elements
 
     @staticmethod
@@ -509,7 +528,8 @@ class HybridAnnotator:
         frame_b64 = base64.standard_b64encode(buf).decode()
 
         cursor_desc = (
-            f"action: {action} at ({mouse_x},{mouse_y})" if action
+            f"action: {action} at ({mouse_x},{mouse_y})"
+            if action
             else f"mouse at ({mouse_x},{mouse_y})"
         )
         prompt = (
@@ -523,15 +543,22 @@ class HybridAnnotator:
             response = self._client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=4096,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image", "source": {"type": "base64",
-                                                      "media_type": "image/jpeg",
-                                                      "data": frame_b64}},
-                    ],
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/jpeg",
+                                    "data": frame_b64,
+                                },
+                            },
+                        ],
+                    }
+                ],
             )
             text = response.content[0].text.strip()
         except Exception as e:
@@ -550,12 +577,14 @@ class HybridAnnotator:
         for item in data.get("elements", []):
             bbox = item.get("bbox", [0, 0, w, h])
             if len(bbox) == 4:
-                elements.append(UIElement(
-                    label=str(item.get("label", "unknown")),
-                    element_class=str(item.get("class", "other")),
-                    bbox=[max(0, int(v)) for v in bbox],
-                    source="vlm",
-                ))
+                elements.append(
+                    UIElement(
+                        label=str(item.get("label", "unknown")),
+                        element_class=str(item.get("class", "other")),
+                        bbox=[max(0, int(v)) for v in bbox],
+                        source="vlm",
+                    )
+                )
         return elements
 
     # ------------------------------------------------------------------
@@ -584,12 +613,14 @@ class HybridAnnotator:
 
         for ev in events:
             if ev.get("click"):
-                candidates.append({
-                    "t": ev["t"],
-                    "mouse_x": ev["x"],
-                    "mouse_y": ev["y"],
-                    "action": f"click_{ev['click']}",
-                })
+                candidates.append(
+                    {
+                        "t": ev["t"],
+                        "mouse_x": ev["x"],
+                        "mouse_y": ev["y"],
+                        "action": f"click_{ev['click']}",
+                    }
+                )
 
         candidates.sort(key=lambda c: c["t"])
 

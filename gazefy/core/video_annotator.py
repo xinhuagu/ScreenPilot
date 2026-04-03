@@ -39,10 +39,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
-
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class UIElement:
@@ -72,6 +72,7 @@ class FrameAnnotation:
 # ---------------------------------------------------------------------------
 # Annotator
 # ---------------------------------------------------------------------------
+
 
 class VideoAnnotator:
     """Annotates a recording session: for each key frame, identifies all
@@ -144,7 +145,11 @@ class VideoAnnotator:
 
                 if on_progress:
                     action_str = action or "scan"
-                    on_progress(i + 1, len(key_frames), f"t={t:.1f}s  {action_str}  ({mouse_x},{mouse_y})")
+                    on_progress(
+                        i + 1,
+                        len(key_frames),
+                        f"t={t:.1f}s  {action_str}  ({mouse_x},{mouse_y})",
+                    )
 
                 frame = self._get_frame_at_time(cap, t, fps, frame_times, total_frames)
                 if frame is None:
@@ -160,11 +165,21 @@ class VideoAnnotator:
                 orig_h, orig_w = frame.shape[:2]
 
                 try:
-                    elements = self._ask_vlm(frame_b64, mouse_x, mouse_y, action, orig_w, orig_h, scale)
+                    elements = self._ask_vlm(
+                        frame_b64, mouse_x, mouse_y, action, orig_w, orig_h, scale
+                    )
                 except Exception as e:
-                    elements = [UIElement(label=f"VLM error: {e}", element_class="other", bbox=[0, 0, orig_w, orig_h])]
+                    elements = [
+                        UIElement(
+                            label=f"VLM error: {e}",
+                            element_class="other",
+                            bbox=[0, 0, orig_w, orig_h],
+                        )
+                    ]
 
-                ann = FrameAnnotation(t=t, mouse_x=mouse_x, mouse_y=mouse_y, action=action, elements=elements)
+                ann = FrameAnnotation(
+                    t=t, mouse_x=mouse_x, mouse_y=mouse_y, action=action, elements=elements
+                )
                 annotations.append(ann)
 
                 if on_progress:
@@ -194,9 +209,7 @@ class VideoAnnotator:
         Frames closer than 0.5 s to each other are deduplicated.
         """
         # Build a sorted list of (t, x, y) from all events for interpolation
-        positions: list[tuple[float, int, int]] = [
-            (e["t"], e["x"], e["y"]) for e in events
-        ]
+        positions: list[tuple[float, int, int]] = [(e["t"], e["x"], e["y"]) for e in events]
         positions.sort()
 
         def mouse_at(t: float) -> tuple[int, int]:
@@ -220,12 +233,14 @@ class VideoAnnotator:
         for ev in events:
             if ev.get("click"):
                 btn = f"click_{ev['click']}"
-                candidates.append({
-                    "t": ev["t"],
-                    "mouse_x": ev["x"],
-                    "mouse_y": ev["y"],
-                    "action": btn,
-                })
+                candidates.append(
+                    {
+                        "t": ev["t"],
+                        "mouse_x": ev["x"],
+                        "mouse_y": ev["y"],
+                        "action": btn,
+                    }
+                )
 
         # Sort by time
         candidates.sort(key=lambda c: c["t"])
@@ -326,8 +341,6 @@ class VideoAnnotator:
 
         vlm_w = int(orig_w * scale)
         vlm_h = int(orig_h * scale)
-        vlm_mx = int(mouse_x * scale)
-        vlm_my = int(mouse_y * scale)
 
         if action:
             cursor_desc = (
@@ -344,12 +357,13 @@ class VideoAnnotator:
 Image size: {vlm_w}×{vlm_h} px (original: {orig_w}×{orig_h} px).
 {cursor_desc}
 
-Identify ALL visible interactive UI elements: buttons, menus, menu items, icons, toolbars, input fields, checkboxes, tabs, dropdowns, scrollbars, labels, etc.
+Identify ALL visible interactive UI elements:
+buttons, menus, icons, toolbars, inputs, checkboxes, tabs, dropdowns, scrollbars, etc.
 
 For each element provide:
-- "label": short descriptive name, e.g. "File Menu", "Save Button", "Brush Tool", "Opacity Slider"
-- "class": one of button | menu | menu_item | icon | toolbar | input | checkbox | tab | dropdown | scrollbar | text | canvas | other
-- "bbox": [x1, y1, x2, y2] in the **original** image pixels ({orig_w}×{orig_h})
+- "label": short name, e.g. "File Menu", "Save Button", "Brush Tool"
+- "class": button|menu|menu_item|icon|toolbar|input|checkbox|tab|dropdown|scrollbar|other
+- "bbox": [x1, y1, x2, y2] in original image pixels ({orig_w}×{orig_h})
 
 Reply with JSON only, no explanation:
 {{"elements": [{{"label": "...", "class": "...", "bbox": [x1, y1, x2, y2]}}, ...]}}"""
@@ -399,9 +413,11 @@ Reply with JSON only, no explanation:
             y1 = max(0, min(int(bbox[1]), orig_h))
             x2 = max(0, min(int(bbox[2]), orig_w))
             y2 = max(0, min(int(bbox[3]), orig_h))
-            elements.append(UIElement(
-                label=str(item.get("label", "Unknown")),
-                element_class=str(item.get("class", "other")),
-                bbox=[x1, y1, x2, y2],
-            ))
+            elements.append(
+                UIElement(
+                    label=str(item.get("label", "Unknown")),
+                    element_class=str(item.get("class", "other")),
+                    bbox=[x1, y1, x2, y2],
+                )
+            )
         return elements

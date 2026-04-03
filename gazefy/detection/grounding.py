@@ -33,8 +33,8 @@ _UI_PROMPT = (
 
 @dataclass
 class GroundingDetection:
-    bbox: list[int]   # [x1, y1, x2, y2] in original image pixels
-    label: str        # matched class from prompt
+    bbox: list[int]  # [x1, y1, x2, y2] in original image pixels
+    label: str  # matched class from prompt
     score: float
 
 
@@ -66,15 +66,13 @@ class GroundingDetector:
                 AutoProcessor,
             )
         except ImportError:
-            raise RuntimeError(
-                "transformers not installed. Run: pip install gazefy[grounding]"
-            )
+            raise RuntimeError("transformers not installed. Run: pip install gazefy[grounding]")
 
         logger.info("Loading GroundingDINO %s on device=%s", self.MODEL_ID, self.device)
         self._processor = AutoProcessor.from_pretrained(self.MODEL_ID)
-        self._model = AutoModelForZeroShotObjectDetection.from_pretrained(
-            self.MODEL_ID
-        ).to(self.device)
+        self._model = AutoModelForZeroShotObjectDetection.from_pretrained(self.MODEL_ID).to(
+            self.device
+        )
         logger.info("GroundingDINO ready")
 
     @property
@@ -117,9 +115,7 @@ class GroundingDetector:
         )[0]
 
         detections: list[GroundingDetection] = []
-        for box, score, label in zip(
-            results["boxes"], results["scores"], results["labels"]
-        ):
+        for box, score, label in zip(results["boxes"], results["scores"], results["labels"]):
             x1, y1, x2, y2 = (int(v) for v in box.tolist())
             # Clamp to frame bounds
             x1, y1 = max(0, x1), max(0, y1)

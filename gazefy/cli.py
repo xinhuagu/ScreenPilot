@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -52,7 +51,10 @@ def main(argv: list[str] | None = None) -> None:
         "annotate-video",
         help="Annotate a video session: detector finds bboxes, OCR reads text, VLM labels icons",
     )
-    av_p.add_argument("session_dir", help="Path to session directory (contains video.mp4 + events.jsonl)")
+    av_p.add_argument(
+        "session_dir",
+        help="Path to session directory (contains video.mp4 + events.jsonl)",
+    )
     av_p.add_argument(
         "--interval",
         type=float,
@@ -168,6 +170,7 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "record-video":
         import datetime
+
         from gazefy.core.video_recorder import VideoRecorder
 
         rec_dir = Path(args.output_dir)
@@ -189,6 +192,7 @@ def main(argv: list[str] | None = None) -> None:
         try:
             while True:
                 import time
+
                 time.sleep(0.5)
         except KeyboardInterrupt:
             pass
@@ -212,7 +216,8 @@ def main(argv: list[str] | None = None) -> None:
                 pack_dir=pack_dir,
             )
             mode_desc = (
-                f"YOLO ({args.pack}) + EasyOCR + VLM (icons)" if args.pack
+                f"YOLO ({args.pack}) + EasyOCR + VLM (icons)"
+                if args.pack
                 else f"GroundingDINO + EasyOCR + VLM (icons)  device={args.device}"
             )
         else:
