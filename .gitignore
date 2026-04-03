@@ -69,4 +69,5 @@ htmlcov/
 .ruff_cache/
 datasets/
 packs/
+recordings/
 *.pt
