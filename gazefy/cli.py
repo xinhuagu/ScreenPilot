@@ -220,6 +220,7 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.command == "record-video":
         import datetime
+        from pathlib import Path
 
         from gazefy.core.video_recorder import VideoRecorder
 
@@ -251,6 +252,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Annotate with: gazefy annotate-video {session_dir}")
 
     elif args.command == "annotate-video":
+        from pathlib import Path
+
         session_dir = Path(args.session_dir)
 
         def on_progress(current: int, total: int, desc: str) -> None:

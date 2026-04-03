@@ -72,7 +72,7 @@ class FrameAnnotation:
         }
         if self.action:  # Only include verification fields for click frames
             d["click_verified"] = self.click_verified
-            d["diff_score"] = round(self.diff_score, 4)
+            d["diff_score"] = round(float(self.diff_score), 4)
         return d
 
 
