@@ -75,23 +75,17 @@ class LLMInterface:
         raise ValueError(f"Unsupported provider: {self._provider}")
 
     def _call_anthropic(self, prompt: str) -> str:
-        try:
-            import anthropic
-        except ImportError:
-            raise RuntimeError("Install llm extra: pip install gazefy[llm]")
+        from gazefy.llm.client import call_with_retry, get_client
 
         if self._client is None:
-            from gazefy.llm.credentials import get_api_key
+            self._client = get_client()
 
-            api_key = get_api_key()
-            if not api_key:
-                raise RuntimeError("No API key found. Need Claude Code login or ANTHROPIC_API_KEY.")
-            self._client = anthropic.Anthropic(api_key=api_key)
-
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
+        response = call_with_retry(
+            lambda: self._client.messages.create(
+                model=self._model,
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": prompt}],
+            )
         )
         return response.content[0].text

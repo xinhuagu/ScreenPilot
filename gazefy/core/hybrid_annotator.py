@@ -362,16 +362,10 @@ class HybridAnnotator:
 
     def _init_llm(self) -> None:
         try:
-            import anthropic
+            from gazefy.llm.client import get_client
 
-            from gazefy.llm.credentials import get_api_key
-
-            api_key = get_api_key()
-            if api_key:
-                self._client = anthropic.Anthropic(api_key=api_key)
-                logger.info("Anthropic client ready")
-            else:
-                logger.warning("No API key — icon labelling will be skipped")
+            self._client = get_client()
+            logger.info("Anthropic client ready (with retry)")
         except Exception as e:
             logger.warning("LLM init failed: %s", e)
 
@@ -450,25 +444,29 @@ class HybridAnnotator:
         )
 
         try:
-            response = self._client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1024,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": frame_b64,
+            from gazefy.llm.client import call_with_retry
+
+            response = call_with_retry(
+                lambda: self._client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=1024,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/jpeg",
+                                        "data": frame_b64,
+                                    },
                                 },
-                            },
-                        ],
-                    }
-                ],
+                            ],
+                        }
+                    ],
+                )
             )
             text = response.content[0].text.strip()
         except Exception as e:
@@ -559,25 +557,29 @@ class HybridAnnotator:
         )
 
         try:
-            response = self._client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=4096,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/jpeg",
-                                    "data": frame_b64,
+            from gazefy.llm.client import call_with_retry
+
+            response = call_with_retry(
+                lambda: self._client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=4096,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/jpeg",
+                                        "data": frame_b64,
+                                    },
                                 },
-                            },
-                        ],
-                    }
-                ],
+                            ],
+                        }
+                    ],
+                )
             )
             text = response.content[0].text.strip()
         except Exception as e:

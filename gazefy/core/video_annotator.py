@@ -389,16 +389,6 @@ class VideoAnnotator:
         scale: float,
     ) -> list[UIElement]:
         """Send a full frame to Claude Vision; return all detected UI elements."""
-        try:
-            import anthropic
-        except ImportError:
-            raise RuntimeError("Install LLM extra: pip install gazefy[llm]")
-
-        from gazefy.llm.credentials import get_api_key
-
-        api_key = get_api_key()
-        if not api_key:
-            raise RuntimeError("No API key. Set ANTHROPIC_API_KEY or use Claude Code login.")
 
         vlm_w = int(orig_w * scale)
         vlm_h = int(orig_h * scale)
@@ -429,26 +419,30 @@ For each element provide:
 Reply with JSON only, no explanation:
 {{"elements": [{{"label": "...", "class": "...", "bbox": [x1, y1, x2, y2]}}, ...]}}"""
 
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4096,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/jpeg",
-                                "data": frame_b64,
+        from gazefy.llm.client import call_with_retry, get_client
+
+        client = get_client()
+        response = call_with_retry(
+            lambda: client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/jpeg",
+                                    "data": frame_b64,
+                                },
                             },
-                        },
-                    ],
-                }
-            ],
+                        ],
+                    }
+                ],
+            )
         )
 
         text = response.content[0].text.strip()

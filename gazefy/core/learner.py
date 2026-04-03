@@ -75,55 +75,49 @@ def _crop_with_context(
 
 def _ask_vlm(icon_b64: str, context_b64: str, element_class: str) -> str:
     """Send icon image to Claude Vision and get a label."""
-    try:
-        import anthropic
-    except ImportError:
-        raise RuntimeError("Install LLM extra: pip install gazefy[llm]")
+    from gazefy.llm.client import call_with_retry, get_client
 
-    from gazefy.llm.credentials import get_api_key
-
-    api_key = get_api_key()
-    if not api_key:
-        raise RuntimeError("No API key found. Need Claude Code login or ANTHROPIC_API_KEY env var.")
-    client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=100,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            f"This is a UI element (type: {element_class}) "
-                            "from a desktop application. "
-                            "The first image is the element itself. "
-                            "The second shows it in context.\n\n"
-                            "Reply with ONLY a short label, e.g. "
-                            "'Paintbrush Tool', 'Save Button'. "
-                            "No explanation."
-                        ),
-                    },
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": icon_b64,
+    client = get_client()
+    response = call_with_retry(
+        lambda: client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=100,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"This is a UI element (type: {element_class}) "
+                                "from a desktop application. "
+                                "The first image is the element itself. "
+                                "The second shows it in context.\n\n"
+                                "Reply with ONLY a short label, e.g. "
+                                "'Paintbrush Tool', 'Save Button'. "
+                                "No explanation."
+                            ),
                         },
-                    },
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": context_b64,
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": icon_b64,
+                            },
                         },
-                    },
-                ],
-            }
-        ],
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": context_b64,
+                            },
+                        },
+                    ],
+                }
+            ],
+        )
     )
     return response.content[0].text.strip()
 
