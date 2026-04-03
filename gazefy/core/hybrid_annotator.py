@@ -70,15 +70,22 @@ class FrameAnnotation:
     mouse_y: int
     action: str | None
     elements: list[UIElement] = field(default_factory=list)
+    # Populated for click frames: offline before/after ChangeDetector comparison
+    click_verified: bool = False  # True if screen changed after this click
+    diff_score: float = 0.0  # Change magnitude (0=none, higher=more change)
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "t": self.t,
             "mouse_x": self.mouse_x,
             "mouse_y": self.mouse_y,
             "action": self.action,
             "elements": [asdict(e) for e in self.elements],
         }
+        if self.action:
+            d["click_verified"] = self.click_verified
+            d["diff_score"] = round(self.diff_score, 4)
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -182,15 +189,27 @@ class HybridAnnotator:
 
                 elements = self._process_frame(frame, mx, my, action)
                 ann = FrameAnnotation(t=t, mouse_x=mx, mouse_y=my, action=action, elements=elements)
+
+                # For click frames: verify using before/after frame comparison
+                # (same ChangeDetector as ActionExecutor, applied offline)
+                if action:
+                    verified, diff = self._verify_click(cap, t, fps, frame_times, total_frames)
+                    ann.click_verified = verified
+                    ann.diff_score = diff
+
                 annotations.append(ann)
 
                 n_ocr = sum(1 for e in elements if "ocr" in e.source)
                 n_vlm = sum(1 for e in elements if "vlm" in e.source)
                 if on_progress:
+                    verify_str = ""
+                    if action:
+                        verify_str = "  ✓" if ann.click_verified else "  ✗ no change"
                     on_progress(
                         i + 1,
                         len(key_frames),
-                        f"t={t:.1f}s → {len(elements)} elements ({n_ocr} OCR, {n_vlm} VLM)",
+                        f"t={t:.1f}s → {len(elements)} elements "
+                        f"({n_ocr} OCR, {n_vlm} VLM){verify_str}",
                     )
         finally:
             cap.release()
@@ -636,6 +655,40 @@ class HybridAnnotator:
     # ------------------------------------------------------------------
     # Video helpers
     # ------------------------------------------------------------------
+
+    def _verify_click(
+        self,
+        cap,
+        t: float,
+        fps: float,
+        frame_times: list[float],
+        total_frames: int,
+        before_s: float = 0.4,
+        after_s: float = 1.0,
+    ) -> tuple[bool, float]:
+        """Offline click verification: compare frames before and after a click.
+
+        Uses the same ChangeDetector as ActionExecutor._verify_change(),
+        applied to pre-recorded frames instead of live screen captures.
+
+        Returns:
+            (click_verified, diff_score)
+        """
+        from gazefy.capture.change_detector import ChangeDetector
+
+        before = self._get_frame_at_time(
+            cap, max(0.0, t - before_s), fps, frame_times, total_frames
+        )
+        after = self._get_frame_at_time(cap, t + after_s, fps, frame_times, total_frames)
+
+        if before is None or after is None:
+            return False, 0.0
+
+        # ChangeDetector expects BGRA; VideoCapture frames are BGR
+        detector = ChangeDetector()
+        detector.check(cv2.cvtColor(before, cv2.COLOR_BGR2BGRA))
+        result = detector.check(cv2.cvtColor(after, cv2.COLOR_BGR2BGRA))
+        return result.changed, result.diff_score
 
     def _get_frame_at_time(
         self,
