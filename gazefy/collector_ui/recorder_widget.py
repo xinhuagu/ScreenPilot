@@ -99,13 +99,10 @@ class RecorderWidget(QMainWindow):
         self.refresh_btn.setToolTip("Refresh window list")
         win_row.addWidget(self.window_combo, 1)
         win_row.addWidget(self.refresh_btn)
-        self.video_check = QCheckBox("Video")
-        self.video_check.setToolTip("Record screen as MP4 + mouse events")
         self.monitor_check = QCheckBox("Monitor")
         self.monitor_check.setToolTip(
             "Live cursor-to-element tracking.\nShows which UI element the mouse is hovering over."
         )
-        win_row.addWidget(self.video_check)
         win_row.addWidget(self.monitor_check)
         layout.addLayout(win_row)
 
@@ -185,7 +182,7 @@ class RecorderWidget(QMainWindow):
         self.train_btn.clicked.connect(self._on_train)
         self.refresh_btn.clicked.connect(self._scan_windows)
         self.window_combo.currentIndexChanged.connect(self._on_app_selected)
-        self.video_check.toggled.connect(self._on_video_mode_toggled)
+        # video_check removed — video is always recorded
         self.monitor_check.toggled.connect(self._on_monitor_toggled)
 
     def _scan_windows(self) -> None:
@@ -427,9 +424,6 @@ class RecorderWidget(QMainWindow):
 
     # --- Actions ---
 
-    def _on_video_mode_toggled(self, checked: bool) -> None:
-        self._ann_row_widget.setVisible(checked)
-
     def _on_monitor_toggled(self, checked: bool) -> None:
         if checked:
             if not self._load_pipeline():
@@ -443,7 +437,7 @@ class RecorderWidget(QMainWindow):
             self.open_btn.setEnabled(False)
             self.annotate_btn.setEnabled(False)
             self.train_btn.setEnabled(False)
-            self.video_check.setEnabled(False)
+            # video always on
             self.window_combo.setEnabled(False)
 
             # Create overlay
@@ -463,7 +457,7 @@ class RecorderWidget(QMainWindow):
                 self._overlay = None
             self.start_btn.setEnabled(True)
             self.open_btn.setEnabled(True)
-            self.video_check.setEnabled(True)
+            # video always on
             self.window_combo.setEnabled(True)
             self.status_label.setText("Ready")
             self.status_label.setStyleSheet("font-weight: bold;")
@@ -618,10 +612,7 @@ class RecorderWidget(QMainWindow):
         if self._recording:
             return
 
-        if self.video_check.isChecked():
-            self._start_video_mode()
-        else:
-            self._start_semantic_mode()
+        self._start_video_mode()
 
     def _start_video_mode(self) -> None:
         """Start recording: screen video + click events into pack directory."""
@@ -662,7 +653,7 @@ class RecorderWidget(QMainWindow):
         self.replay_btn.setEnabled(False)
         self.annotate_btn.setEnabled(False)
         self.window_combo.setEnabled(False)
-        self.video_check.setEnabled(False)
+        # video always on
         self.status_label.setText("● REC (video)")
         self.status_label.setStyleSheet("font-weight: bold; color: red;")
         self._elapsed_timer.start(200)
@@ -694,7 +685,7 @@ class RecorderWidget(QMainWindow):
         self.replay_btn.setEnabled(False)
         self.annotate_btn.setEnabled(False)
         self.window_combo.setEnabled(False)
-        self.video_check.setEnabled(False)
+        # video always on
         label = "● REC (semantic)" if has_model else "● REC (coords only)"
         self.status_label.setText(label)
         self.status_label.setStyleSheet("font-weight: bold; color: red;")
@@ -709,7 +700,7 @@ class RecorderWidget(QMainWindow):
         self._recording = False
         self._elapsed_timer.stop()
 
-        if self.video_check.isChecked() and self._video_recorder:
+        if self._video_recorder:
             session_dir = self._video_recorder.stop()
             n_clicks = self._video_recorder.click_count
             self._video_recorder = None
@@ -718,30 +709,10 @@ class RecorderWidget(QMainWindow):
             self.replay_btn.setEnabled(False)
             self.annotate_btn.setEnabled(True)
             self.window_combo.setEnabled(True)
-            self.video_check.setEnabled(True)
             self.status_label.setText(f"Saved ({n_clicks} clicks)")
             self.status_label.setStyleSheet("font-weight: bold; color: #333;")
             self.element_label.setText(f"→ {session_dir}")
             self.frame_label.setText(f"Clicks: {n_clicks}")
-        else:
-            if self._record_path and self._frames:
-                with open(self._record_path, "w") as f:
-                    for frame in self._frames:
-                        f.write(json.dumps(frame) + "\n")
-
-            self.start_btn.setEnabled(True)
-            self.stop_btn.setEnabled(False)
-            self.replay_btn.setEnabled(bool(self._frames))
-            self.annotate_btn.setEnabled(False)
-            self.window_combo.setEnabled(True)
-            self.video_check.setEnabled(True)
-            n_clicks = sum(1 for f in self._frames if f.get("click"))
-            n_semantic = sum(1 for f in self._frames if f.get("element_class"))
-            self.status_label.setText(
-                f"Saved ({len(self._frames)} frames, {n_clicks} clicks, {n_semantic} semantic)"
-            )
-            self.status_label.setStyleSheet("font-weight: bold; color: #333;")
-            self.element_label.setText(f"→ {self._record_path}")
 
     def _on_annotate(self) -> None:
         """Annotate video → convert to YOLO → append to pack training data."""
@@ -1152,17 +1123,12 @@ class RecorderWidget(QMainWindow):
             self.status_label.setStyleSheet("font-weight: bold; color: #333;")
             self.replay_btn.setEnabled(True)
             self.start_btn.setEnabled(True)
-        elif self.video_check.isChecked():
-            self.frame_label.setText(f"Clicks: {count}")
         else:
-            self.frame_label.setText(f"Frames: {count}")
+            self.frame_label.setText(f"Clicks: {count}")
 
     def _update_elapsed(self) -> None:
-        if self._recording:
-            if self.video_check.isChecked() and self._video_recorder:
-                elapsed = self._video_recorder.elapsed
-            else:
-                elapsed = time.monotonic() - self._record_start
+        if self._recording and self._video_recorder:
+            elapsed = self._video_recorder.elapsed
             m, s = divmod(int(elapsed), 60)
             self.time_label.setText(f"{m:02d}:{s:02d}")
 
