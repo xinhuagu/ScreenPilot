@@ -93,30 +93,32 @@ class ElementRegistry:
         }
         return key
 
-    def lookup(self, bbox: Rect) -> dict | None:
-        """Find a registered element by IoU or center-point proximity."""
+    def lookup(self, bbox: Rect, element_class: str = "") -> dict | None:
+        """Find a registered element by IoU, with class-aware center fallback."""
         best_entry = None
         best_score = 0.0
         cx, cy = bbox.center.x, bbox.center.y
+        bw = bbox.x2 - bbox.x1
 
         for entry in self._entries.values():
             eb = entry["bbox"]
             entry_rect = Rect(eb[0], eb[1], eb[2], eb[3])
-
-            # IoU matching
             score = iou(bbox, entry_rect)
             if score > best_score:
                 best_score = score
                 best_entry = entry
 
-        # If IoU match found, return it
         if best_score >= IOU_MATCH_THRESHOLD:
             return best_entry
 
-        # Fallback: center-point proximity (for small buttons that shift a few pixels)
+        # Fallback: center proximity, same class only, tight radius
         best_entry = None
-        best_dist = 30.0  # Max 30 pixel distance
+        max_dist = max(10.0, bw * 0.5)  # Proportional to element size
+        best_dist = max_dist
         for entry in self._entries.values():
+            # Must be same class (don't confuse Play with Next)
+            if element_class and entry.get("class") != element_class:
+                continue
             eb = entry["bbox"]
             ecx = (eb[0] + eb[2]) / 2
             ecy = (eb[1] + eb[3]) / 2
