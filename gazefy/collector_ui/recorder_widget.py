@@ -852,15 +852,27 @@ class RecorderWidget(QMainWindow):
                 trainer = PackTrainer(config)
                 result = trainer.train()
 
-                # Find trained model
+                # Find trained model — search multiple locations
                 import glob
                 import shutil
 
                 model_src = Path(result.best_model_path)
                 if not model_src.exists():
-                    candidates = glob.glob("**/best.pt", recursive=True)
-                    if candidates:
-                        model_src = Path(sorted(candidates)[-1])
+                    # Ultralytics may save to a different root
+                    search_paths = [
+                        "/opt/homebrew/runs/**/best.pt",
+                        "runs/**/best.pt",
+                        str(Path.home() / "runs/**/best.pt"),
+                    ]
+                    for pattern in search_paths:
+                        candidates = glob.glob(pattern, recursive=True)
+                        if candidates:
+                            # Pick the most recently modified
+                            model_src = max(
+                                (Path(c) for c in candidates),
+                                key=lambda p: p.stat().st_mtime,
+                            )
+                            break
 
                 if model_src.exists():
                     # Save timestamped copy to models/
@@ -868,6 +880,11 @@ class RecorderWidget(QMainWindow):
                     shutil.copy2(model_src, ts_model)
                     # Update current model.pt
                     shutil.copy2(model_src, pack_dir / "model.pt")
+                else:
+                    self._frame_update.emit(
+                        0, f"Error: trained model not found at {result.best_model_path}"
+                    )
+                    return
 
                 # Write training log
                 map50 = result.metrics.get("metrics/mAP50(B)", "?")
