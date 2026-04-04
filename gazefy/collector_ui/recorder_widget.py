@@ -975,12 +975,19 @@ class RecorderWidget(QMainWindow):
                 desc = f'CLICK {btn} [{el_desc}] "{el_text}"' if el_desc else f"CLICK {btn}"
                 self._frame_update.emit(len(self._frames), desc)
 
+        scroll_accum = [0.0]
+
         def on_scroll(x, y, dx, dy):
             if not self._recording:
                 return
+            scroll_accum[0] += dy
+            if abs(scroll_accum[0]) < 1:
+                return
+            steps = int(scroll_accum[0])
+            scroll_accum[0] -= steps
             t = time.monotonic() - self._record_start
-            direction = "up" if dy > 0 else "down"
-            frame = {"t": round(t, 3), "x": int(x), "y": int(y), "scroll": direction, "dy": dy}
+            direction = "up" if steps > 0 else "down"
+            frame = {"t": round(t, 3), "x": int(x), "y": int(y), "scroll": direction, "dy": steps}
             if has_model:
                 el = self._resolve_element(float(x), float(y))
                 frame.update(el)
