@@ -82,7 +82,7 @@ class RecorderWidget(QMainWindow):
     """Compact floating window for semantic recording + auto icon labeling."""
 
     _frame_update = Signal(int, str)
-    # overlay removed — element info shown in status bar only
+    _progress_update = Signal(int, int, str)  # (current, total, description)
 
     def __init__(self):
         super().__init__()
@@ -115,6 +115,7 @@ class RecorderWidget(QMainWindow):
         # overlay removed
         self._elapsed_timer = QTimer()
         self._elapsed_timer.timeout.connect(self._update_elapsed)
+        self._progress_update.connect(self._on_progress)
         self._scan_windows()
 
     def closeEvent(self, event) -> None:  # noqa: N802
@@ -226,6 +227,14 @@ class RecorderWidget(QMainWindow):
         status.addWidget(self.time_label)
         status.addStretch()
         layout.addLayout(status)
+
+        # Progress bar (hidden until annotate/train)
+        from PySide6.QtWidgets import QProgressBar
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(16)
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
 
         # Element / info display
         self.element_label = QLabel("")
@@ -784,6 +793,8 @@ class RecorderWidget(QMainWindow):
         self.start_btn.setEnabled(False)
         self.status_label.setText("Annotating...")
         self.status_label.setStyleSheet("font-weight: bold; color: #FF8C00;")
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
 
         pack_dir = self._ensure_pack(pack_name)
 
@@ -791,10 +802,17 @@ class RecorderWidget(QMainWindow):
             try:
                 from gazefy.core.annotate_pipeline import run_annotate
 
-                result = run_annotate(
-                    pack_dir,
-                    on_progress=lambda msg: self._frame_update.emit(0, msg),
-                )
+                def on_progress(msg: str) -> None:
+                    self._frame_update.emit(0, msg)
+                    # Parse "[N/M]" from message for progress bar
+                    import re
+
+                    m = re.search(r"\[(\d+)/(\d+)\]", msg)
+                    if m:
+                        self._progress_update.emit(int(m.group(1)), int(m.group(2)), msg)
+
+                result = run_annotate(pack_dir, on_progress=on_progress)
+                self._progress_update.emit(100, 100, "Done")
                 self._frame_update.emit(
                     result["total_images"],
                     f"Done: {result['total_images']} images, "
@@ -828,6 +846,9 @@ class RecorderWidget(QMainWindow):
 
         self.train_btn.setEnabled(False)
         self.annotate_btn.setEnabled(False)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(0)  # Indeterminate (spinning)
+        self.progress_bar.setVisible(True)
         self.start_btn.setEnabled(False)
         self.status_label.setText("Training...")
         self.status_label.setStyleSheet("font-weight: bold; color: #FF8C00;")
@@ -1194,16 +1215,25 @@ class RecorderWidget(QMainWindow):
 
     # --- UI updates ---
 
+    def _on_progress(self, current: int, total: int, desc: str) -> None:
+        """Update progress bar from background thread."""
+        if total > 0:
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setMaximum(total)
+            self.progress_bar.setValue(current)
+        if current >= total and total > 0:
+            self.progress_bar.setVisible(False)
+
     def _on_frame_update(self, count: int, desc: str) -> None:
         self.element_label.setText(desc)
 
-        # Detect completion signals
         if desc.startswith("Done:") or desc.startswith("Training done"):
             self.status_label.setText(desc[:60])
             self.status_label.setStyleSheet("font-weight: bold; color: green;")
             self.annotate_btn.setEnabled(True)
             self.train_btn.setEnabled(True)
             self.start_btn.setEnabled(True)
+            self.progress_bar.setVisible(False)
             self._annotating = False
         elif desc.startswith("Error:") or desc.startswith("Training error"):
             self.status_label.setText(desc[:60])
@@ -1211,6 +1241,7 @@ class RecorderWidget(QMainWindow):
             self.annotate_btn.setEnabled(True)
             self.train_btn.setEnabled(True)
             self.start_btn.setEnabled(True)
+            self.progress_bar.setVisible(False)
             self._annotating = False
         elif desc == "done":
             self.status_label.setText("Replay done")
