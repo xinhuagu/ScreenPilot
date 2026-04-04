@@ -920,6 +920,39 @@ class RecorderWidget(QMainWindow):
         t = threading.Thread(target=run, daemon=True)
         t.start()
 
+    def _restore_window(self) -> None:
+        """Restore target app window to the position/size it had during recording."""
+        if not self._video_session_dir:
+            return
+        win_path = self._video_session_dir / "frame_windows.json"
+        if not win_path.exists():
+            return
+        try:
+            windows = json.loads(win_path.read_text())
+            if not windows:
+                return
+            # Use first frame's window rect
+            w = windows[0]
+            app_name = self.window_combo.currentData() or ""
+            if not app_name:
+                return
+            import subprocess
+
+            script = (
+                f'tell application "System Events"\n'
+                f'  tell process "{app_name}"\n'
+                f"    set position of front window to {{{w['left']}, {w['top']}}}\n"
+                f"    set size of front window to {{{w['width']}, {w['height']}}}\n"
+                f"  end tell\n"
+                f"end tell"
+            )
+            subprocess.run(["osascript", "-e", script], timeout=3, capture_output=True)
+            self.element_label.setText(
+                f"Window restored to ({w['left']},{w['top']}) {w['width']}x{w['height']}"
+            )
+        except Exception as e:
+            self.element_label.setText(f"Window restore failed: {e}")
+
     def _on_replay(self) -> None:
         if self._replaying:
             return
@@ -932,6 +965,12 @@ class RecorderWidget(QMainWindow):
         if not self._frames:
             self.element_label.setText("No events to replay")
             return
+
+        # Restore window to recording position/size before replaying
+        self._restore_window()
+        import time as time_mod
+
+        time_mod.sleep(0.5)  # Wait for window to settle
 
         self._replaying = True
         self.replay_btn.setEnabled(False)
