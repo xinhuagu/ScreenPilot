@@ -38,6 +38,46 @@ from PySide6.QtWidgets import (
 )
 
 
+class _GroundingDINOWrapper:
+    """Wraps GroundingDINO to match UIDetector interface (detect + is_loaded)."""
+
+    def __init__(self):
+        self._processor = None
+        self._model = None
+
+    def load_model(self) -> None:
+        from gazefy.detection.grounding_label import load_model
+
+        self._processor, self._model = load_model()
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._model is not None
+
+    def detect(self, frame):
+        """Run GroundingDINO on a frame, return list[Detection]."""
+        import cv2
+        from PIL import Image
+
+        from gazefy.detection.grounding_label import predict_image
+        from gazefy.tracker.ui_map import Detection
+        from gazefy.utils.geometry import Rect
+
+        if frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        dets = predict_image(self._processor, self._model, img, threshold=0.15)
+        return [
+            Detection(
+                class_id=d["class_id"],
+                class_name=d["class_name"],
+                confidence=d["confidence"],
+                bbox=Rect(*d["bbox"]),
+            )
+            for d in dets
+        ]
+
+
 class RecorderWidget(QMainWindow):
     """Compact floating window for semantic recording + auto icon labeling."""
 
@@ -294,27 +334,28 @@ class RecorderWidget(QMainWindow):
         return pack_dir
 
     def _load_pipeline(self) -> bool:
-        """Load YOLO detector + OCR + icon labels for the selected app's pack."""
+        """Load detector + OCR. Uses YOLO if model exists, else GroundingDINO."""
         self._pack_name = self._get_selected_app()
         if not self._pack_name:
             return False
         try:
             pack_dir = self._ensure_pack(self._pack_name)
             from gazefy.core.application_pack import ApplicationPack
-
-            pack = ApplicationPack.load(pack_dir)
-            if not pack.has_model:
-                self.element_label.setText(
-                    f"Pack '{self._pack_name}' has no model yet. Record + Annotate + Train first."
-                )
-                return False
-
-            from gazefy.detection.detector import UIDetector
             from gazefy.detection.ocr import ElementOCR
             from gazefy.tracker.element_tracker import ElementTracker
 
-            self._detector = UIDetector(pack)
-            self._detector.load_model()
+            pack = ApplicationPack.load(pack_dir)
+
+            if pack.has_model:
+                from gazefy.detection.detector import UIDetector
+
+                self._detector = UIDetector(pack)
+                self._detector.load_model()
+                self.element_label.setText(f"Loaded YOLO: {self._pack_name}")
+            else:
+                self._detector = _GroundingDINOWrapper()
+                self.element_label.setText("No model — using GroundingDINO (slower)")
+
             self._ocr = ElementOCR()
             self._tracker = ElementTracker(min_stability=1)
             if pack.icon_labels_path.exists():
