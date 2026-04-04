@@ -624,10 +624,10 @@ class RecorderWidget(QMainWindow):
 
                 # 4. Resolve cursor (screen coords → window-relative pixel coords)
                 x, y = pyautogui.position()
-                # Convert screen to pixel coords relative to window
-                retina = 2.0
-                px = (x - region.left) * retina
-                py = (y - region.top) * retina
+                # Detect actual retina scale
+                actual_retina = img.shape[1] / max(region.width, 1)
+                px = (x - region.left) * actual_retina
+                py = (y - region.top) * actual_retina
                 el_info = self._resolve_element(px, py)
                 el_class = el_info.get("element_class", "")
                 el_text = el_info.get("text", "")
@@ -649,7 +649,13 @@ class RecorderWidget(QMainWindow):
         """Convert UIMap elements to overlay, positioned on the window."""
         if self._ui_map is None:
             return
-        retina = 2.0
+        # Detect actual retina scale from last captured frame
+        retina = 1.0
+        if self._last_frame is not None:
+            import numpy as np
+
+            if isinstance(self._last_frame, np.ndarray):
+                retina = self._last_frame.shape[1] / max(region.width, 1)
         elements = []
         for el in self._ui_map.elements.values():
             text = el.text
