@@ -94,16 +94,37 @@ class ElementRegistry:
         return key
 
     def lookup(self, bbox: Rect) -> dict | None:
-        """Find a registered element by bbox IoU matching."""
+        """Find a registered element by IoU or center-point proximity."""
         best_entry = None
-        best_iou = 0.0
+        best_score = 0.0
+        cx, cy = bbox.center.x, bbox.center.y
+
         for entry in self._entries.values():
             eb = entry["bbox"]
             entry_rect = Rect(eb[0], eb[1], eb[2], eb[3])
+
+            # IoU matching
             score = iou(bbox, entry_rect)
-            if score > best_iou and score >= IOU_MATCH_THRESHOLD:
-                best_iou = score
+            if score > best_score:
+                best_score = score
                 best_entry = entry
+
+        # If IoU match found, return it
+        if best_score >= IOU_MATCH_THRESHOLD:
+            return best_entry
+
+        # Fallback: center-point proximity (for small buttons that shift a few pixels)
+        best_entry = None
+        best_dist = 30.0  # Max 30 pixel distance
+        for entry in self._entries.values():
+            eb = entry["bbox"]
+            ecx = (eb[0] + eb[2]) / 2
+            ecy = (eb[1] + eb[3]) / 2
+            dist = ((cx - ecx) ** 2 + (cy - ecy) ** 2) ** 0.5
+            if dist < best_dist:
+                best_dist = dist
+                best_entry = entry
+
         return best_entry
 
     def save(self) -> None:
