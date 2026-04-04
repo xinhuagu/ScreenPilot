@@ -17,19 +17,19 @@ import torch
 from PIL import Image
 from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
 
-# UI element classes and their text prompts for GroundingDINO
+# UI element classes — fine-grained prompts for precise bbox detection
 CLASSES = [
     "button",
-    "menu item",
+    "clickable text",
     "input field",
     "checkbox",
     "dropdown",
-    "dialog",
-    "toolbar",
-    "label",
+    "text label",
     "tab",
     "slider",
     "icon",
+    "toggle",
+    "search box",
 ]
 
 # Map GroundingDINO text → YOLO class ID
