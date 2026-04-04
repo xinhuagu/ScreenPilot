@@ -117,6 +117,24 @@ class RecorderWidget(QMainWindow):
         self._elapsed_timer.timeout.connect(self._update_elapsed)
         self._scan_windows()
 
+    def closeEvent(self, event) -> None:  # noqa: N802
+        """Prevent closing while annotate or train is running."""
+        if self._annotating or self._recording:
+            from PySide6.QtWidgets import QMessageBox
+
+            task = "Annotating" if self._annotating else "Recording"
+            reply = QMessageBox.question(
+                self,
+                "Task in progress",
+                f"{task} is still running. Close anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.No:
+                event.ignore()
+                return
+        event.accept()
+
     def _init_ui(self) -> None:
         self.setWindowTitle("Gazefy")
         self.setMinimumSize(480, 140)
