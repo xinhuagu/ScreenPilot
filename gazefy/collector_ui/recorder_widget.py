@@ -692,11 +692,9 @@ class RecorderWidget(QMainWindow):
         if self._overlay is None:
             return
         if elements:
-            # Full element update — coords already in screen space
             self._overlay.set_elements(elements, cursor_id, retina_scale=1.0)
         else:
-            # Just cursor update
-            self._overlay._cursor_element_id = cursor_id
+            self._overlay._update_cursor(cursor_id)
 
     def _on_start(self) -> None:
         if self._recording:
