@@ -41,6 +41,7 @@ class ElementTracker:
         self._all_elements: dict[str, UIElement] = {}  # ALL tracked (incl. unstable)
         self._stability: dict[str, int] = {}  # element_id → consecutive frames
         self._last_seen: dict[str, int] = {}  # element_id → generation when last detected
+        self._cached_texts: dict[str, str] = {}  # element_id → OCR text (stable)
 
     @property
     def current_map(self) -> UIMap:
@@ -172,7 +173,46 @@ class ElementTracker:
             generation=self._generation,
         )
 
+    def set_element_texts(self, texts: dict[str, str]) -> None:
+        """Inject OCR texts for elements. Cached across frames.
+
+        Args:
+            texts: {element_id: "text"} — only new/changed texts.
+        """
+        self._cached_texts.update(texts)
+        # Rebuild current map with updated texts
+        if self._current_map.elements:
+            updated = {}
+            for eid, el in self._current_map.elements.items():
+                cached = self._cached_texts.get(eid, el.text)
+                if cached != el.text:
+                    updated[eid] = UIElement(
+                        id=el.id,
+                        class_id=el.class_id,
+                        class_name=el.class_name,
+                        confidence=el.confidence,
+                        bbox=el.bbox,
+                        center=el.center,
+                        text=cached,
+                        parent_id=el.parent_id,
+                        stability=el.stability,
+                        semantic_id=el.semantic_id,
+                        description=el.description,
+                        context=el.context,
+                    )
+                else:
+                    updated[eid] = el
+            self._current_map = UIMap(
+                elements=updated,
+                frame_width=self._current_map.frame_width,
+                frame_height=self._current_map.frame_height,
+                generation=self._current_map.generation,
+                timestamp=self._current_map.timestamp,
+            )
+
     def _det_to_element(self, eid: str, det: Detection, stability: int = 1) -> UIElement:
+        # Carry over cached text from previous frame
+        text = self._cached_texts.get(eid, "")
         return UIElement(
             id=eid,
             class_id=det.class_id,
@@ -180,6 +220,7 @@ class ElementTracker:
             confidence=det.confidence,
             bbox=det.bbox,
             center=det.bbox.center,
+            text=text,
             stability=stability,
         )
 

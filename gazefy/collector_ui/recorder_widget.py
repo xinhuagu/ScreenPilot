@@ -393,19 +393,12 @@ class RecorderWidget(QMainWindow):
             return False
 
     def _detect_and_ocr(self, frame) -> None:
-        """Run YOLO + OCR on a frame, update internal UIMap."""
+        """Run detection + OCR on a frame, update UIMap with stable text."""
         if self._detector is None:
             return
         from gazefy.capture.change_detector import ChangeLevel, ChangeResult
 
         detections = self._detector.detect(frame)
-        if self._ocr and detections:
-            texts = self._ocr.read_all_elements(frame, detections)
-            # Inject text into detections via tracker
-            # We'll read text after tracking
-            self._texts = texts
-        else:
-            self._texts = {}
 
         h, w = frame.shape[:2]
         change = ChangeResult(changed=True, change_level=ChangeLevel.MAJOR)
@@ -413,6 +406,20 @@ class RecorderWidget(QMainWindow):
         # Bootstrap stability
         change2 = ChangeResult(changed=True, change_level=ChangeLevel.MINOR)
         self._tracker.update(detections, change2, frame_width=w, frame_height=h)
+
+        # OCR only elements that don't have cached text yet
+        if self._ocr and self._tracker.current_map.elements:
+            new_texts = {}
+            for eid, el in self._tracker.current_map.elements.items():
+                if not el.text:  # No cached text → OCR
+                    text = self._ocr.read_element_text(
+                        frame, (el.bbox.x1, el.bbox.y1, el.bbox.x2, el.bbox.y2)
+                    )
+                    if text:
+                        new_texts[eid] = text
+            if new_texts:
+                self._tracker.set_element_texts(new_texts)
+
         self._ui_map = self._tracker.current_map
         self._detections = detections
         self._last_frame = frame
@@ -427,21 +434,10 @@ class RecorderWidget(QMainWindow):
         if el is None:
             return {}
 
-        # Find OCR text for this element
-        text = el.text
-        if not text and hasattr(self, "_texts") and hasattr(self, "_detections"):
-            # Match by bbox overlap
-            for idx, det_text in self._texts.items():
-                if idx < len(self._detections):
-                    det = self._detections[idx]
-                    if abs(det.bbox.x1 - el.bbox.x1) < 10 and abs(det.bbox.y1 - el.bbox.y1) < 10:
-                        text = det_text
-                        break
-
         return {
             "element_id": el.id,
             "element_class": el.class_name,
-            "text": text,
+            "text": el.text,
             "confidence": round(el.confidence, 3),
         }
 
