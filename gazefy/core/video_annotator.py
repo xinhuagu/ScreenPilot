@@ -43,6 +43,21 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_dict(obj):
+    """Convert numpy types to Python natives for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_dict(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_dict(v) for v in obj]
+    # Check for numpy types without importing numpy at module level
+    t = type(obj).__name__
+    if t in ("int64", "int32", "int16", "int8", "uint8"):
+        return int(obj)
+    if t in ("float32", "float64", "float16"):
+        return float(obj)
+    return obj
+
+
 def _call_vision_vlm(prompt: str, image_b64: str) -> str:
     """Call a VLM with an image. Uses Copilot+gpt-4o by default."""
     from gazefy.llm.copilot import CopilotClient
@@ -76,13 +91,13 @@ class FrameAnnotation:
 
     def to_dict(self) -> dict:
         d: dict = {
-            "t": self.t,
-            "mouse_x": self.mouse_x,
-            "mouse_y": self.mouse_y,
+            "t": float(self.t),
+            "mouse_x": int(self.mouse_x),
+            "mouse_y": int(self.mouse_y),
             "action": self.action,
-            "elements": [asdict(e) for e in self.elements],
+            "elements": [_sanitize_dict(asdict(e)) for e in self.elements],
         }
-        if self.action:  # Only include verification fields for click frames
+        if self.action:
             d["click_verified"] = self.click_verified
             d["diff_score"] = round(float(self.diff_score), 4)
         return d

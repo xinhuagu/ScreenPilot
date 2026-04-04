@@ -50,6 +50,19 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def _sanitize(obj):
+    """Convert numpy types to Python natives for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    return obj
+
+
 # ---------------------------------------------------------------------------
 # Data models  (same as video_annotator for compatibility)
 # ---------------------------------------------------------------------------
@@ -76,15 +89,15 @@ class FrameAnnotation:
 
     def to_dict(self) -> dict:
         d: dict = {
-            "t": self.t,
-            "mouse_x": self.mouse_x,
-            "mouse_y": self.mouse_y,
+            "t": float(self.t),
+            "mouse_x": int(self.mouse_x),
+            "mouse_y": int(self.mouse_y),
             "action": self.action,
-            "elements": [asdict(e) for e in self.elements],
+            "elements": [_sanitize(asdict(e)) for e in self.elements],
         }
         if self.action:
             d["click_verified"] = self.click_verified
-            d["diff_score"] = round(self.diff_score, 4)
+            d["diff_score"] = round(float(self.diff_score), 4)
         return d
 
 
