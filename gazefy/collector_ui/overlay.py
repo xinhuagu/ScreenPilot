@@ -60,13 +60,11 @@ class OverlayWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        scale = 1.0 / getattr(self, "_retina_scale", 2.0)
-
         for el in self._elements:
-            x1 = int(el["x1"] * scale)
-            y1 = int(el["y1"] * scale)
-            x2 = int(el["x2"] * scale)
-            y2 = int(el["y2"] * scale)
+            x1 = int(el["x1"])
+            y1 = int(el["y1"])
+            x2 = int(el["x2"])
+            y2 = int(el["y2"])
 
             cls = el.get("class", "")
             text = el.get("text", "")
