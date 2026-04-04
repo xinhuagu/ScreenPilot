@@ -184,6 +184,7 @@ class RecorderWidget(QMainWindow):
         self.annotate_btn.clicked.connect(self._on_annotate)
         self.train_btn.clicked.connect(self._on_train)
         self.refresh_btn.clicked.connect(self._scan_windows)
+        self.window_combo.currentIndexChanged.connect(self._on_app_selected)
         self.video_check.toggled.connect(self._on_video_mode_toggled)
         self.monitor_check.toggled.connect(self._on_monitor_toggled)
 
@@ -201,6 +202,21 @@ class RecorderWidget(QMainWindow):
                 has_pack = (Path("packs") / name.lower() / "pack.yaml").exists()
                 label = f"{name} ●" if has_pack else name
                 self.window_combo.addItem(label, name)
+
+    def _on_app_selected(self) -> None:
+        """Bring the selected application to front."""
+        app_name = self.window_combo.currentData()
+        if app_name:
+            try:
+                import subprocess
+
+                subprocess.run(
+                    ["osascript", "-e", f'tell application "{app_name}" to activate'],
+                    timeout=3,
+                    capture_output=True,
+                )
+            except Exception:
+                pass
 
     def _get_selected_app(self) -> str:
         """Get the selected application name (lowercase, for pack dir)."""
