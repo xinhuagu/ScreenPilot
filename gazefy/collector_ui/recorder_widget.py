@@ -679,8 +679,7 @@ class RecorderWidget(QMainWindow):
                             self._tracker.update(dets2, boot, frame_width=w, frame_height=h)
                             self._ui_map = self._tracker.current_map
 
-                    n = self._ui_map.element_count if self._ui_map else 0
-                    self._frame_update.emit(0, f"Detected {n} elements")
+                    # Don't overwrite element_label — cursor info goes there
 
                 # 4. Resolve cursor (screen coords → window-relative pixel coords)
                 x, y = pyautogui.position()
@@ -701,11 +700,16 @@ class RecorderWidget(QMainWindow):
                     if func:
                         desc += f" — {func}"
                 else:
-                    desc = f"({x}, {y}) no element"
+                    desc = ""
 
+                # Always update element_label with current cursor element
+                self._frame_update.emit(0, f"→ {desc}" if desc else "")
+
+                # Log only on element change
                 if el_id != last_element_id:
                     last_element_id = el_id
-                    self._frame_update.emit(0, f"→ {desc}")
+                    if desc:
+                        self._frame_update.emit(0, f"LOG:→ {desc}")
 
                 time.sleep(0.05)
 
@@ -1287,8 +1291,13 @@ class RecorderWidget(QMainWindow):
         self._log(desc)
 
     def _on_frame_update(self, count: int, desc: str) -> None:
+        if desc.startswith("LOG:"):
+            # Log only, don't update element_label
+            self._log(desc[4:])
+            return
         self.element_label.setText(desc)
-        self._log(desc)
+        if desc and not desc.startswith("→"):
+            self._log(desc)
 
         if desc.startswith("Done:") or desc.startswith("Training done"):
             self.status_label.setText(desc[:60])
