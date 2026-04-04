@@ -587,6 +587,21 @@ class RecorderWidget(QMainWindow):
             # video always on
             self.window_combo.setEnabled(False)
 
+            # Restore window + bring app to front
+            self._restore_window()
+            app_name = self.window_combo.currentData()
+            if app_name:
+                try:
+                    import subprocess
+
+                    subprocess.run(
+                        ["osascript", "-e", f'tell application "{app_name}" to activate'],
+                        timeout=3,
+                        capture_output=True,
+                    )
+                except Exception:
+                    pass
+
             self.status_label.setText("Monitoring...")
             self.status_label.setStyleSheet("font-weight: bold; color: #2196F3;")
             self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
@@ -1004,11 +1019,23 @@ class RecorderWidget(QMainWindow):
         t.start()
 
     def _restore_window(self) -> None:
-        """Restore target app window to the position/size it had during recording."""
-        if not self._video_session_dir:
-            return
-        win_path = self._video_session_dir / "frame_windows.json"
-        if not win_path.exists():
+        """Restore target app window to the position/size from recording."""
+        # Find frame_windows.json from session or latest recording
+        win_path = None
+        if self._video_session_dir:
+            win_path = self._video_session_dir / "frame_windows.json"
+        if not win_path or not win_path.exists():
+            # Try latest recording in pack
+            pack_name = self._get_selected_app()
+            if pack_name:
+                rec_dir = Path(f"packs/{pack_name}/recordings")
+                if rec_dir.exists():
+                    for d in sorted(rec_dir.iterdir(), reverse=True):
+                        p = d / "frame_windows.json"
+                        if p.exists():
+                            win_path = p
+                            break
+        if not win_path or not win_path.exists():
             return
         try:
             windows = json.loads(win_path.read_text())
