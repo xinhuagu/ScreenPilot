@@ -188,20 +188,21 @@ class VideoRecorder:
             if self._on_click:
                 self._on_click(ev)
 
-        scroll_accum = [0.0]  # Accumulate trackpad fractional scrolls
-
         def on_scroll(x: float, y: float, dx: int, dy: int) -> None:
             if not self._recording:
                 return
-            # Mac trackpad sends fractional dy — accumulate until >= 1
-            scroll_accum[0] += dy
-            if abs(scroll_accum[0]) < 1:
+            if dy == 0:
                 return
             t = round(time.monotonic() - self._start_time, 3)
-            steps = int(scroll_accum[0])
-            scroll_accum[0] -= steps
-            direction = "up" if steps > 0 else "down"
-            ev = {"t": t, "x": int(x), "y": int(y), "scroll": direction, "dy": steps}
+            direction = "up" if dy > 0 else "down"
+            # Store raw dy (may be fractional on trackpad)
+            ev = {
+                "t": t,
+                "x": int(x),
+                "y": int(y),
+                "scroll": direction,
+                "dy": round(float(dy), 2),
+            }
             self._events.append(ev)
             if self._on_click:
                 self._on_click(ev)

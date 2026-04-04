@@ -975,19 +975,18 @@ class RecorderWidget(QMainWindow):
                 desc = f'CLICK {btn} [{el_desc}] "{el_text}"' if el_desc else f"CLICK {btn}"
                 self._frame_update.emit(len(self._frames), desc)
 
-        scroll_accum = [0.0]
-
         def on_scroll(x, y, dx, dy):
-            if not self._recording:
+            if not self._recording or dy == 0:
                 return
-            scroll_accum[0] += dy
-            if abs(scroll_accum[0]) < 1:
-                return
-            steps = int(scroll_accum[0])
-            scroll_accum[0] -= steps
             t = time.monotonic() - self._record_start
-            direction = "up" if steps > 0 else "down"
-            frame = {"t": round(t, 3), "x": int(x), "y": int(y), "scroll": direction, "dy": steps}
+            direction = "up" if dy > 0 else "down"
+            frame = {
+                "t": round(t, 3),
+                "x": int(x),
+                "y": int(y),
+                "scroll": direction,
+                "dy": round(float(dy), 2),
+            }
             if has_model:
                 el = self._resolve_element(float(x), float(y))
                 frame.update(el)
@@ -1029,6 +1028,8 @@ class RecorderWidget(QMainWindow):
         except ImportError:
             return
 
+        scroll_accum = 0.0
+
         for i, ev in enumerate(self._frames):
             if not self._replaying:
                 break
@@ -1041,15 +1042,22 @@ class RecorderWidget(QMainWindow):
             scroll = ev.get("scroll", "")
 
             if click:
+                pyautogui.moveTo(x, y, _pause=False)
                 if click == "right":
                     pyautogui.rightClick(x, y, _pause=False)
                 else:
                     pyautogui.click(x, y, _pause=False)
                 self._frame_update.emit(i + 1, f"CLICK {click} ({x},{y})")
             elif scroll:
-                dy = ev.get("dy", 1 if scroll == "up" else -1)
-                pyautogui.scroll(dy, x, y)
-                self._frame_update.emit(i + 1, f"SCROLL {scroll} ({x},{y})")
+                pyautogui.moveTo(x, y, _pause=False)
+                raw_dy = ev.get("dy", 0)
+                scroll_accum += float(raw_dy)
+                # Execute when accumulated >= 1 full step
+                if abs(scroll_accum) >= 1:
+                    steps = int(scroll_accum)
+                    scroll_accum -= steps
+                    pyautogui.scroll(steps, x, y)
+                    self._frame_update.emit(i + 1, f"SCROLL {scroll} dy={steps} ({x},{y})")
             else:
                 pyautogui.moveTo(x, y, _pause=False)
 
