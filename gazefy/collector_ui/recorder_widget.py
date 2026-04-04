@@ -361,13 +361,14 @@ class RecorderWidget(QMainWindow):
         return pack_dir
 
     def _load_pipeline(self) -> bool:
-        """Load detector + OCR. Uses YOLO if model exists, else GroundingDINO."""
+        """Load detector + OCR + element registry."""
         self._pack_name = self._get_selected_app()
         if not self._pack_name:
             return False
         try:
             pack_dir = self._ensure_pack(self._pack_name)
             from gazefy.core.application_pack import ApplicationPack
+            from gazefy.core.element_registry import ElementRegistry
             from gazefy.detection.ocr import ElementOCR
             from gazefy.tracker.element_tracker import ElementTracker
 
@@ -385,8 +386,12 @@ class RecorderWidget(QMainWindow):
 
             self._ocr = ElementOCR()
             self._tracker = ElementTracker(min_stability=1)
+            self._registry = ElementRegistry(pack_dir / "element_registry.json")
             if pack.icon_labels_path.exists():
                 self._icon_labels = json.loads(pack.icon_labels_path.read_text())
+            n_reg = len(self._registry)
+            if n_reg:
+                self.element_label.setText(f"Registry: {n_reg} known elements")
             return True
         except Exception as e:
             self.element_label.setText(f"Load failed: {e}")
@@ -434,12 +439,25 @@ class RecorderWidget(QMainWindow):
         if el is None:
             return {}
 
-        return {
+        result = {
             "element_id": el.id,
             "element_class": el.class_name,
             "text": el.text,
             "confidence": round(el.confidence, 3),
         }
+
+        # Enrich from registry
+        if hasattr(self, "_registry") and self._registry:
+            reg = self._registry.lookup(el.bbox)
+            if reg:
+                if not result["text"] and reg.get("text"):
+                    result["text"] = reg["text"]
+                if reg.get("icon_label"):
+                    result["icon_label"] = reg["icon_label"]
+                if reg.get("function"):
+                    result["function"] = reg["function"]
+
+        return result
 
     def _auto_label_element(self, el_info: dict, x: float, y: float) -> str:
         """If element has no text (icon), ask VLM to label it. Returns label."""
@@ -637,9 +655,14 @@ class RecorderWidget(QMainWindow):
                 el_class = el_info.get("element_class", "")
                 el_text = el_info.get("text", "")
                 el_id = el_info.get("element_id", "")
+                icon_label = el_info.get("icon_label", "")
+                func = el_info.get("function", "")
 
                 if el_class:
-                    desc = f'[{el_class}] "{el_text}" ({el_id})'
+                    name = el_text or icon_label or el_class
+                    desc = f'[{el_class}] "{name}"'
+                    if func:
+                        desc += f" — {func}"
                 else:
                     desc = f"({x}, {y}) no element"
 

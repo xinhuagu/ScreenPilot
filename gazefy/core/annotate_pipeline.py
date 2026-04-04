@@ -103,6 +103,11 @@ def run_annotate(
         except Exception:
             log("  VLM not available — icons will be labeled as 'icon'")
 
+        # Element registry — persistent semantic identity
+        from gazefy.core.element_registry import ElementRegistry
+
+        registry = ElementRegistry(pack_dir / "element_registry.json")
+
         for i, name in enumerate(to_label):
             img = Image.open(img_dir / name).convert("RGB")
             dets = predict_image(processor, gd_model, img, threshold=0.1)
@@ -116,8 +121,15 @@ def run_annotate(
                 if text:
                     det["ocr_text"] = text
                     n_ocr += 1
+                    # Register with OCR text
+                    registry.register(
+                        bbox=tuple(int(b) for b in bbox),
+                        element_class=det["class_name"],
+                        text=text,
+                        source="ocr",
+                    )
 
-            # VLM for icons (no OCR text)
+            # VLM for icons (no OCR text) — label + function
             icons = [d for d in dets if not d.get("ocr_text")]
             if icons and vlm:
                 try:
@@ -128,15 +140,29 @@ def run_annotate(
                         for j, d in enumerate(icons)
                     )
                     resp = vlm.chat_with_image(
-                        f"{len(icons)} unlabeled icons: {icon_desc}. "
-                        "Reply: #1: Label, #2: Label, ...",
+                        f"UI screenshot with {len(icons)} icon elements. "
+                        f"Icons: {icon_desc}.\n"
+                        "For each icon, reply with its label AND function.\n"
+                        "Format: #1: Label | Function, #2: Label | Function",
                         b64,
-                        max_tokens=200,
+                        max_tokens=500,
                     )
-                    for m in re.finditer(r"#(\d+):\s*(.+?)(?:,|$)", resp):
+                    for m in re.finditer(r"#(\d+):\s*(.+?)(?:\||,|$)", resp):
                         idx_match = int(m.group(1)) - 1
+                        parts = m.group(2).strip().split("|")
+                        label = parts[0].strip()
+                        func = parts[1].strip() if len(parts) > 1 else ""
                         if 0 <= idx_match < len(icons):
-                            icons[idx_match]["vlm_label"] = m.group(2).strip()
+                            icons[idx_match]["vlm_label"] = label
+                            # Register icon with VLM label + function
+                            bbox = icons[idx_match]["bbox"]
+                            registry.register(
+                                bbox=tuple(int(b) for b in bbox),
+                                element_class=icons[idx_match]["class_name"],
+                                icon_label=label,
+                                function=func,
+                                source="vlm",
+                            )
                 except Exception:
                     pass  # VLM error — continue
 
@@ -148,6 +174,10 @@ def run_annotate(
                 f"  [{i + 1}/{len(to_label)}] {name}: "
                 f"{len(dets)} dets ({n_ocr} OCR, {len(icons)} icons)"
             )
+
+        # Save registry
+        registry.save()
+        log(f"  Registry: {len(registry)} elements registered")
 
     # --- Step 3: Write dataset.yaml ---
     import yaml
