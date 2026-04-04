@@ -386,7 +386,15 @@ class RecorderWidget(QMainWindow):
             self.status_label.setStyleSheet("font-weight: bold;")
 
     def _monitor_loop(self) -> None:
-        """Continuously detect + resolve cursor, update overlay."""
+        """Continuously detect + resolve cursor, update overlay.
+
+        On each cycle:
+        1. Find target window (current position + size)
+        2. Capture only that window region
+        3. Run YOLO detection
+        4. Position overlay exactly on the window
+        5. Resolve cursor to element
+        """
         try:
             import mss
             import numpy as np
@@ -396,19 +404,62 @@ class RecorderWidget(QMainWindow):
         except ImportError:
             return
 
+        from gazefy.capture.change_detector import ChangeDetector
+        from gazefy.capture.window_finder import find_window
+
+        change_detector = ChangeDetector()
         last_element_id = ""
+        detect_interval = 0  # Force first detection
+
         with mss.mss() as sct:
-            monitor = sct.monitors[1]
-            # Initial detection
-            img = np.array(sct.grab(monitor))
-            self._detect_and_ocr(img)
-
-            # Build overlay elements from UIMap
-            self._push_overlay_elements()
-
             while self._monitoring:
+                # 1. Find window every cycle (handles move/resize)
+                pack_name = self._pack_name
+                win = find_window(pack_name) if pack_name else None
+                if win is None:
+                    # Try window_match from pack
+                    try:
+                        from gazefy.core.application_pack import ApplicationPack
+
+                        pack = ApplicationPack.load(f"packs/{pack_name}")
+                        for pattern in pack.metadata.window_match:
+                            win = find_window(pattern)
+                            if win:
+                                break
+                    except Exception:
+                        pass
+
+                if win is None:
+                    time.sleep(0.2)
+                    continue
+
+                region = win.region
+
+                # 2. Capture window region only
+                monitor = {
+                    "top": region.top,
+                    "left": region.left,
+                    "width": region.width,
+                    "height": region.height,
+                }
+                img = np.array(sct.grab(monitor))
+
+                # 3. Detect on change (or periodically)
+                change = change_detector.check(img)
+                detect_interval += 1
+                if change.changed or detect_interval >= 20:
+                    detect_interval = 0
+                    self._detect_and_ocr(img)
+                    # Push overlay with window offset
+                    self._push_overlay_elements_with_region(region)
+
+                # 4. Resolve cursor (screen coords → window-relative pixel coords)
                 x, y = pyautogui.position()
-                el_info = self._resolve_element(float(x), float(y))
+                # Convert screen to pixel coords relative to window
+                retina = 2.0
+                px = (x - region.left) * retina
+                py = (y - region.top) * retina
+                el_info = self._resolve_element(px, py)
                 el_class = el_info.get("element_class", "")
                 el_text = el_info.get("text", "")
                 el_id = el_info.get("element_id", "")
@@ -422,19 +473,17 @@ class RecorderWidget(QMainWindow):
                     last_element_id = el_id
                     self._frame_update.emit(0, f"→ {desc}")
 
-                # Update overlay cursor highlight
                 self._overlay_update.emit([], el_id)
-
                 time.sleep(0.05)
 
-    def _push_overlay_elements(self) -> None:
-        """Convert UIMap elements to overlay draw list."""
+    def _push_overlay_elements_with_region(self, region) -> None:
+        """Convert UIMap elements to overlay, positioned on the window."""
         if self._ui_map is None:
             return
+        retina = 2.0
         elements = []
         for el in self._ui_map.elements.values():
             text = el.text
-            # Check OCR texts
             if not text and hasattr(self, "_texts") and hasattr(self, "_detections"):
                 for idx, dt in self._texts.items():
                     if idx < len(self._detections):
@@ -445,18 +494,22 @@ class RecorderWidget(QMainWindow):
                         ):
                             text = dt
                             break
+            # bbox is in pixel coords relative to captured window
+            # Convert to screen coords for overlay
             elements.append(
                 {
                     "id": el.id,
-                    "x1": el.bbox.x1,
-                    "y1": el.bbox.y1,
-                    "x2": el.bbox.x2,
-                    "y2": el.bbox.y2,
+                    "x1": el.bbox.x1 / retina + region.left,
+                    "y1": el.bbox.y1 / retina + region.top,
+                    "x2": el.bbox.x2 / retina + region.left,
+                    "y2": el.bbox.y2 / retina + region.top,
                     "class": el.class_name,
                     "text": text,
                     "conf": el.confidence,
                 }
             )
+
+        # Emit with region info for overlay positioning
         self._overlay_update.emit(elements, "")
 
     def _on_overlay_update(self, elements: list, cursor_id: str) -> None:
@@ -464,9 +517,9 @@ class RecorderWidget(QMainWindow):
         if self._overlay is None:
             return
         if elements:
-            # Full element update
-            self._overlay.set_elements(elements, cursor_id)
-            # Position overlay to cover screen
+            # Full element update — coords already in screen space
+            self._overlay.set_elements(elements, cursor_id, retina_scale=1.0)
+            # Cover full screen so overlay can draw anywhere
             from PySide6.QtWidgets import QApplication
 
             screen = QApplication.primaryScreen()
