@@ -560,7 +560,13 @@ class RecorderWidget(QMainWindow):
             session_dir = rec_dir / f"untagged_{ts}"
             session_dir.mkdir(parents=True, exist_ok=True)
 
-        self._video_recorder = VideoRecorder(fps=10)
+        # Pass window name so recorder tracks window position each frame
+        win_name = ""
+        if pack_name != "(no model)":
+            for pattern in pack.metadata.window_match:
+                win_name = pattern
+                break
+        self._video_recorder = VideoRecorder(fps=10, window_name=win_name)
         self._recording = True
         self._record_start = time.monotonic()
         self._video_session_dir = session_dir

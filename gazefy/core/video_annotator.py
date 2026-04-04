@@ -147,6 +147,12 @@ class VideoAnnotator:
         if frame_times_path.exists():
             frame_times = json.loads(frame_times_path.read_text())
 
+        # Load per-frame window rects (if available)
+        frame_windows_path = session_dir / "frame_windows.json"
+        frame_windows: list[dict] = []
+        if frame_windows_path.exists():
+            frame_windows = json.loads(frame_windows_path.read_text())
+
         cap = cv2.VideoCapture(str(video_path))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 10.0
@@ -173,6 +179,17 @@ class VideoAnnotator:
                 frame = self._get_frame_at_time(cap, t, fps, frame_times, total_frames)
                 if frame is None:
                     continue
+
+                # Get window rect for this frame (if available)
+                frame_idx = self._time_to_frame_idx(t, fps, frame_times, total_frames)
+                win_rect = None
+                if frame_windows and 0 <= frame_idx < len(frame_windows):
+                    win_rect = frame_windows[frame_idx]
+
+                # Convert mouse screen coords to window-relative
+                if win_rect:
+                    mouse_x = mouse_x - win_rect["left"]
+                    mouse_y = mouse_y - win_rect["top"]
 
                 # Draw cursor on frame copy
                 vis = self._draw_cursor(frame, mouse_x, mouse_y, action)
@@ -291,6 +308,13 @@ class VideoAnnotator:
 
     # --- video helpers ---
 
+    def _time_to_frame_idx(
+        self, t: float, fps: float, frame_times: list[float], total_frames: int
+    ) -> int:
+        if frame_times:
+            return min(range(len(frame_times)), key=lambda i: abs(frame_times[i] - t))
+        return max(0, min(int(t * fps), total_frames - 1))
+
     def _get_frame_at_time(
         self,
         cap,
@@ -301,12 +325,7 @@ class VideoAnnotator:
     ):
         import cv2
 
-        if frame_times:
-            idx = min(range(len(frame_times)), key=lambda i: abs(frame_times[i] - t))
-        else:
-            idx = int(t * fps)
-
-        idx = max(0, min(idx, total_frames - 1))
+        idx = self._time_to_frame_idx(t, fps, frame_times, total_frames)
         cap.set(cv2.CAP_PROP_POS_FRAMES, float(idx))
         ret, frame = cap.read()
         return frame if ret else None

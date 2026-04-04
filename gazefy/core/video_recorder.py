@@ -32,14 +32,21 @@ class VideoRecorder:
     # Minimum interval between recorded move events (seconds)
     _MOVE_INTERVAL = 0.2
 
-    def __init__(self, fps: int = 10, monitor_index: int = 1):
+    def __init__(
+        self,
+        fps: int = 10,
+        monitor_index: int = 1,
+        window_name: str = "",
+    ):
         self.fps = fps
         self.monitor_index = monitor_index
+        self.window_name = window_name  # Track a specific window
         self._session_dir: Path | None = None
         self._recording = False
         self._start_time = 0.0
         self._events: list[dict] = []
         self._frame_times: list[float] = []
+        self._frame_windows: list[dict] = []  # Window rect per frame
         self._video_writer = None
         self._video_thread: threading.Thread | None = None
         self._mouse_listener = None
@@ -54,6 +61,7 @@ class VideoRecorder:
         self._start_time = time.monotonic()
         self._events = []
         self._frame_times = []
+        self._frame_windows = []
         self._last_move_t = -1.0
         self._on_click = on_click
 
@@ -95,7 +103,23 @@ class VideoRecorder:
         assert self._session_dir is not None
 
         with mss.mss() as sct:
-            monitor = sct.monitors[self.monitor_index]
+            # Determine capture region
+            if self.window_name:
+                from gazefy.capture.window_finder import find_window
+
+                win = find_window(self.window_name)
+                if win:
+                    monitor = {
+                        "left": win.region.left,
+                        "top": win.region.top,
+                        "width": win.region.width,
+                        "height": win.region.height,
+                    }
+                else:
+                    monitor = sct.monitors[self.monitor_index]
+            else:
+                monitor = sct.monitors[self.monitor_index]
+
             w, h = monitor["width"], monitor["height"]
             video_path = str(self._session_dir / "video.mp4")
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -105,10 +129,34 @@ class VideoRecorder:
             while self._recording:
                 now = time.monotonic()
                 if now >= next_t:
+                    # Re-find window each frame (handles move/resize)
+                    if self.window_name:
+                        win = find_window(self.window_name)
+                        if win:
+                            monitor = {
+                                "left": win.region.left,
+                                "top": win.region.top,
+                                "width": win.region.width,
+                                "height": win.region.height,
+                            }
+
                     img = np.array(sct.grab(monitor))
+                    # Resize if window changed size
                     frame_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                    fh, fw = frame_bgr.shape[:2]
+                    if fw != w or fh != h:
+                        frame_bgr = cv2.resize(frame_bgr, (w, h))
+
                     self._video_writer.write(frame_bgr)
                     self._frame_times.append(round(now - self._start_time, 3))
+                    self._frame_windows.append(
+                        {
+                            "left": monitor["left"],
+                            "top": monitor["top"],
+                            "width": monitor["width"],
+                            "height": monitor["height"],
+                        }
+                    )
                     next_t += interval
                 else:
                     time.sleep(0.002)
@@ -154,6 +202,10 @@ class VideoRecorder:
 
         times_path = session_dir / "frame_times.json"
         times_path.write_text(json.dumps(self._frame_times))
+
+        # Save per-frame window rects
+        windows_path = session_dir / "frame_windows.json"
+        windows_path.write_text(json.dumps(self._frame_windows))
 
     # --- properties for UI ---
 
