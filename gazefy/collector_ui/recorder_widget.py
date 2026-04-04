@@ -75,7 +75,7 @@ class RecorderWidget(QMainWindow):
         self._overlay_update.connect(self._on_overlay_update)
         self._elapsed_timer = QTimer()
         self._elapsed_timer.timeout.connect(self._update_elapsed)
-        self._scan_packs()
+        self._scan_windows()
 
     def _init_ui(self) -> None:
         self.setWindowTitle("Gazefy")
@@ -89,21 +89,25 @@ class RecorderWidget(QMainWindow):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(4)
 
-        # Pack selector row + mode toggles
-        pack_row = QHBoxLayout()
-        pack_row.addWidget(QLabel("Pack:"))
-        self.pack_combo = QComboBox()
-        self.pack_combo.setMinimumWidth(120)
-        pack_row.addWidget(self.pack_combo, 1)
+        # Window selector + refresh + mode toggles
+        win_row = QHBoxLayout()
+        win_row.addWidget(QLabel("App:"))
+        self.window_combo = QComboBox()
+        self.window_combo.setMinimumWidth(200)
+        self.refresh_btn = QPushButton("↻")
+        self.refresh_btn.setFixedWidth(30)
+        self.refresh_btn.setToolTip("Refresh window list")
+        win_row.addWidget(self.window_combo, 1)
+        win_row.addWidget(self.refresh_btn)
         self.video_check = QCheckBox("Video")
         self.video_check.setToolTip("Record screen as MP4 + mouse events")
         self.monitor_check = QCheckBox("Monitor")
         self.monitor_check.setToolTip(
             "Live cursor-to-element tracking.\nShows which UI element the mouse is hovering over."
         )
-        pack_row.addWidget(self.video_check)
-        pack_row.addWidget(self.monitor_check)
-        layout.addLayout(pack_row)
+        win_row.addWidget(self.video_check)
+        win_row.addWidget(self.monitor_check)
+        layout.addLayout(win_row)
 
         # Annotator mode row (visible only in video mode)
         ann_row = QHBoxLayout()
@@ -179,38 +183,101 @@ class RecorderWidget(QMainWindow):
         self.open_btn.clicked.connect(self._on_open)
         self.annotate_btn.clicked.connect(self._on_annotate)
         self.train_btn.clicked.connect(self._on_train)
+        self.refresh_btn.clicked.connect(self._scan_windows)
         self.video_check.toggled.connect(self._on_video_mode_toggled)
         self.monitor_check.toggled.connect(self._on_monitor_toggled)
 
-    def _scan_packs(self) -> None:
-        packs_dir = Path("packs")
-        self.pack_combo.clear()
-        self.pack_combo.addItem("(no model)")
-        if packs_dir.exists():
-            for p in sorted(packs_dir.iterdir()):
-                if (p / "pack.yaml").exists():
-                    self.pack_combo.addItem(p.name)
+    def _scan_windows(self) -> None:
+        """Populate window dropdown with all visible application windows."""
+        from gazefy.capture.window_finder import list_windows
+
+        self.window_combo.clear()
+        self._window_list = list_windows()
+        seen = set()
+        for w in self._window_list:
+            name = w.owner_name
+            if name and name not in seen:
+                seen.add(name)
+                has_pack = (Path("packs") / name.lower() / "pack.yaml").exists()
+                label = f"{name} ●" if has_pack else name
+                self.window_combo.addItem(label, name)
+
+    def _get_selected_app(self) -> str:
+        """Get the selected application name (lowercase, for pack dir)."""
+        data = self.window_combo.currentData()
+        return str(data).lower().replace(" ", "_") if data else ""
+
+    def _ensure_pack(self, app_name: str) -> Path:
+        """Create pack directory + pack.yaml if it doesn't exist."""
+        import yaml
+
+        pack_dir = Path("packs") / app_name
+        pack_yaml = pack_dir / "pack.yaml"
+
+        if not pack_yaml.exists():
+            pack_dir.mkdir(parents=True, exist_ok=True)
+            meta = {
+                "name": app_name,
+                "version": "0.1.0",
+                "description": f"Auto-created pack for {app_name}",
+                "window_match": [self.window_combo.currentData() or app_name],
+                "model_file": "model.pt",
+                "labels": [
+                    "button",
+                    "menu_item",
+                    "input_field",
+                    "checkbox",
+                    "dropdown",
+                    "dialog",
+                    "toolbar",
+                    "label",
+                    "tab",
+                    "icon",
+                    "slider",
+                ],
+                "input_size": 640,
+                "conf_threshold": 0.25,
+                "iou_threshold": 0.45,
+            }
+            with open(pack_yaml, "w") as f:
+                yaml.dump(meta, f, default_flow_style=False)
+
+            # Create subdirs
+            from gazefy.core.application_pack import ApplicationPack
+
+            pack = ApplicationPack.load(pack_dir)
+            pack.ensure_dirs()
+
+            self.element_label.setText(f"Created new pack: {pack_dir}")
+
+        return pack_dir
 
     def _load_pipeline(self) -> bool:
-        """Load YOLO detector + OCR + icon labels for the selected pack."""
-        self._pack_name = self.pack_combo.currentText()
-        if self._pack_name == "(no model)":
+        """Load YOLO detector + OCR + icon labels for the selected app's pack."""
+        self._pack_name = self._get_selected_app()
+        if not self._pack_name:
             return False
         try:
+            pack_dir = self._ensure_pack(self._pack_name)
             from gazefy.core.application_pack import ApplicationPack
+
+            pack = ApplicationPack.load(pack_dir)
+            if not pack.has_model:
+                self.element_label.setText(
+                    f"Pack '{self._pack_name}' has no model yet. Record + Annotate + Train first."
+                )
+                return False
+
             from gazefy.detection.detector import UIDetector
             from gazefy.detection.ocr import ElementOCR
             from gazefy.tracker.element_tracker import ElementTracker
 
-            pack = ApplicationPack.load(f"packs/{self._pack_name}")
             self._detector = UIDetector(pack)
             self._detector.load_model()
             self._ocr = ElementOCR()
             self._tracker = ElementTracker(min_stability=1)
-            # Load existing icon labels
-            labels_path = Path(f"packs/{self._pack_name}/icon_labels.json")
-            if labels_path.exists():
-                self._icon_labels = json.loads(labels_path.read_text())
+            if pack.icon_labels_path.exists():
+                self._icon_labels = json.loads(pack.icon_labels_path.read_text())
             return True
         except Exception as e:
             self.element_label.setText(f"Load failed: {e}")
@@ -361,7 +428,7 @@ class RecorderWidget(QMainWindow):
             self.annotate_btn.setEnabled(False)
             self.train_btn.setEnabled(False)
             self.video_check.setEnabled(False)
-            self.pack_combo.setEnabled(False)
+            self.window_combo.setEnabled(False)
 
             # Create overlay
             from gazefy.collector_ui.overlay import OverlayWidget
@@ -381,7 +448,7 @@ class RecorderWidget(QMainWindow):
             self.start_btn.setEnabled(True)
             self.open_btn.setEnabled(True)
             self.video_check.setEnabled(True)
-            self.pack_combo.setEnabled(True)
+            self.window_combo.setEnabled(True)
             self.status_label.setText("Ready")
             self.status_label.setStyleSheet("font-weight: bold;")
 
@@ -544,13 +611,14 @@ class RecorderWidget(QMainWindow):
         """Start recording: screen video + click events into pack directory."""
         from gazefy.core.video_recorder import VideoRecorder
 
-        pack_name = self.pack_combo.currentText()
-        if pack_name != "(no model)":
+        pack_name = self._get_selected_app()
+        if pack_name:
+            pack_dir = self._ensure_pack(pack_name)
             from gazefy.core.application_pack import ApplicationPack
 
-            pack = ApplicationPack.load(f"packs/{pack_name}")
-            pack.ensure_dirs()
+            pack = ApplicationPack.load(pack_dir)
             session_dir = pack.new_recording_dir()
+            win_name = pack.metadata.window_match[0] if pack.metadata.window_match else pack_name
         else:
             import datetime
 
@@ -559,13 +627,7 @@ class RecorderWidget(QMainWindow):
             ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             session_dir = rec_dir / f"untagged_{ts}"
             session_dir.mkdir(parents=True, exist_ok=True)
-
-        # Pass window name so recorder tracks window position each frame
-        win_name = ""
-        if pack_name != "(no model)":
-            for pattern in pack.metadata.window_match:
-                win_name = pattern
-                break
+            win_name = ""
         self._video_recorder = VideoRecorder(fps=10, window_name=win_name)
         self._recording = True
         self._record_start = time.monotonic()
@@ -583,7 +645,7 @@ class RecorderWidget(QMainWindow):
         self.stop_btn.setEnabled(True)
         self.replay_btn.setEnabled(False)
         self.annotate_btn.setEnabled(False)
-        self.pack_combo.setEnabled(False)
+        self.window_combo.setEnabled(False)
         self.video_check.setEnabled(False)
         self.status_label.setText("● REC (video)")
         self.status_label.setStyleSheet("font-weight: bold; color: red;")
@@ -598,13 +660,13 @@ class RecorderWidget(QMainWindow):
         self._frames = []
         self._record_start = time.monotonic()
 
-        pack_name = self.pack_combo.currentText()
+        pack_name = self._get_selected_app()
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        if pack_name != "(no model)":
+        if pack_name:
+            pack_dir = self._ensure_pack(pack_name)
             from gazefy.core.application_pack import ApplicationPack
 
-            pack = ApplicationPack.load(f"packs/{pack_name}")
-            pack.ensure_dirs()
+            pack = ApplicationPack.load(pack_dir)
             rec_dir = pack.recordings_dir
         else:
             rec_dir = Path("recordings")
@@ -615,7 +677,7 @@ class RecorderWidget(QMainWindow):
         self.stop_btn.setEnabled(True)
         self.replay_btn.setEnabled(False)
         self.annotate_btn.setEnabled(False)
-        self.pack_combo.setEnabled(False)
+        self.window_combo.setEnabled(False)
         self.video_check.setEnabled(False)
         label = "● REC (semantic)" if has_model else "● REC (coords only)"
         self.status_label.setText(label)
@@ -639,7 +701,7 @@ class RecorderWidget(QMainWindow):
             self.stop_btn.setEnabled(False)
             self.replay_btn.setEnabled(False)
             self.annotate_btn.setEnabled(True)
-            self.pack_combo.setEnabled(True)
+            self.window_combo.setEnabled(True)
             self.video_check.setEnabled(True)
             self.status_label.setText(f"Saved ({n_clicks} clicks)")
             self.status_label.setStyleSheet("font-weight: bold; color: #333;")
@@ -655,7 +717,7 @@ class RecorderWidget(QMainWindow):
             self.stop_btn.setEnabled(False)
             self.replay_btn.setEnabled(bool(self._frames))
             self.annotate_btn.setEnabled(False)
-            self.pack_combo.setEnabled(True)
+            self.window_combo.setEnabled(True)
             self.video_check.setEnabled(True)
             n_clicks = sum(1 for f in self._frames if f.get("click"))
             n_semantic = sum(1 for f in self._frames if f.get("element_class"))
@@ -677,8 +739,8 @@ class RecorderWidget(QMainWindow):
                 return
             self._video_session_dir = Path(path)
 
-        pack_name = self.pack_combo.currentText()
-        if pack_name == "(no model)":
+        pack_name = self._get_selected_app()
+        if not pack_name:
             self.element_label.setText("Select a pack first")
             return
 
@@ -691,7 +753,7 @@ class RecorderWidget(QMainWindow):
 
         session_dir = self._video_session_dir
         detector_mode = self.detector_combo.currentData()
-        pack_dir = Path("packs") / pack_name
+        pack_dir = self._ensure_pack(pack_name)
 
         def run() -> None:
             def on_progress(current: int, total: int, desc: str) -> None:
@@ -744,12 +806,12 @@ class RecorderWidget(QMainWindow):
         """Train YOLO on all accumulated data. Save timestamped model + log."""
         import datetime
 
-        pack_name = self.pack_combo.currentText()
-        if pack_name == "(no model)":
+        pack_name = self._get_selected_app()
+        if not pack_name:
             self.element_label.setText("Select a pack first")
             return
 
-        pack_dir = Path("packs") / pack_name
+        pack_dir = self._ensure_pack(pack_name)
         training_dir = pack_dir / "training_data"
         dataset_yaml = training_dir / "dataset.yaml"
 
