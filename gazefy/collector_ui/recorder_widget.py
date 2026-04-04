@@ -433,11 +433,14 @@ class RecorderWidget(QMainWindow):
             change = ChangeResult(changed=True, change_level=ChangeLevel.MINOR)
             self._tracker.update(detections, change, frame_width=w, frame_height=h)
 
-        # OCR only elements that don't have cached text yet
+        # OCR only small elements that don't have cached text
+        # Skip large bboxes (panels/containers) — their OCR is garbage
         if self._ocr and self._tracker.current_map.elements:
             new_texts = {}
+            frame_area = frame.shape[0] * frame.shape[1]
+            max_ocr_area = frame_area * 0.15  # Skip if bbox > 15% of frame
             for eid, el in self._tracker.current_map.elements.items():
-                if not el.text:  # No cached text → OCR
+                if not el.text and el.bbox.area < max_ocr_area:
                     text = self._ocr.read_element_text(
                         frame, (el.bbox.x1, el.bbox.y1, el.bbox.x2, el.bbox.y2)
                     )
@@ -445,6 +448,19 @@ class RecorderWidget(QMainWindow):
                         new_texts[eid] = text
             if new_texts:
                 self._tracker.set_element_texts(new_texts)
+
+        # Enrich from element registry (for elements without OCR text)
+        if hasattr(self, "_registry") and self._registry and self._tracker.current_map.elements:
+            reg_texts = {}
+            for eid, el in self._tracker.current_map.elements.items():
+                if not el.text:
+                    reg = self._registry.lookup(el.bbox)
+                    if reg:
+                        name = reg.get("text") or reg.get("icon_label") or ""
+                        if name:
+                            reg_texts[eid] = name
+            if reg_texts:
+                self._tracker.set_element_texts(reg_texts)
 
         self._ui_map = self._tracker.current_map
         self._detections = detections
