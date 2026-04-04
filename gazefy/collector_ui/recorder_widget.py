@@ -351,12 +351,24 @@ class RecorderWidget(QMainWindow):
                 self.element_label.setText("Select a pack with a model first")
                 return
             self._monitoring = True
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(False)
+            self.replay_btn.setEnabled(False)
+            self.open_btn.setEnabled(False)
+            self.annotate_btn.setEnabled(False)
+            self.train_btn.setEnabled(False)
+            self.video_check.setEnabled(False)
+            self.pack_combo.setEnabled(False)
             self.status_label.setText("Monitoring...")
             self.status_label.setStyleSheet("font-weight: bold; color: #2196F3;")
             self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
             self._monitor_thread.start()
         else:
             self._monitoring = False
+            self.start_btn.setEnabled(True)
+            self.open_btn.setEnabled(True)
+            self.video_check.setEnabled(True)
+            self.pack_combo.setEnabled(True)
             self.status_label.setText("Ready")
             self.status_label.setStyleSheet("font-weight: bold;")
 
