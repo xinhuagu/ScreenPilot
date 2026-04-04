@@ -468,11 +468,18 @@ class RecorderWidget(QMainWindow):
             # video always on
             self.window_combo.setEnabled(False)
 
-            # Create overlay
+            # Create overlay covering the full screen
+            from PySide6.QtWidgets import QApplication
+
             from gazefy.collector_ui.overlay import OverlayWidget
 
             self._overlay = OverlayWidget()
+            screen = QApplication.primaryScreen()
+            if screen:
+                g = screen.geometry()
+                self._overlay.setGeometry(g.x(), g.y(), g.width(), g.height())
             self._overlay.show()
+            self._overlay.raise_()
 
             self.status_label.setText("Monitoring...")
             self.status_label.setStyleSheet("font-weight: bold; color: #2196F3;")
@@ -549,12 +556,28 @@ class RecorderWidget(QMainWindow):
                 }
                 img = np.array(sct.grab(monitor))
 
-                # 3. Detect on change (or periodically)
+                # 3. Detect on change (or every ~1 second)
                 change = change_detector.check(img)
                 detect_interval += 1
                 if change.changed or detect_interval >= 20:
                     detect_interval = 0
                     self._detect_and_ocr(img)
+                    # Bootstrap stability (need 2 updates for elements to appear)
+                    if self._ui_map and self._ui_map.element_count == 0:
+                        from gazefy.capture.change_detector import (
+                            ChangeLevel,
+                            ChangeResult,
+                        )
+
+                        boot = ChangeResult(changed=True, change_level=ChangeLevel.MINOR)
+                        if self._detector and hasattr(self._detector, "detect"):
+                            dets2 = self._detector.detect(img)
+                            h, w = img.shape[:2]
+                            self._tracker.update(dets2, boot, frame_width=w, frame_height=h)
+                            self._ui_map = self._tracker.current_map
+
+                    n = self._ui_map.element_count if self._ui_map else 0
+                    self._frame_update.emit(0, f"Detected {n} elements")
                     # Push overlay with window offset
                     self._push_overlay_elements_with_region(region)
 
