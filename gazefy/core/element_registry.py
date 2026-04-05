@@ -1,7 +1,7 @@
-"""Element Registry: persistent semantic identity for every detected UI element.
+"""Element Registry: persistent semantic identity for UI elements.
 
-Built during Annotate, loaded during Monitor. Maps bbox positions to
-their semantic identity (text, icon label, function description).
+All bbox coordinates are stored NORMALIZED (0-1), so they work
+regardless of window size or position.
 
 Storage: packs/<app>/element_registry.json
 {
@@ -10,21 +10,10 @@ Storage: packs/<app>/element_registry.json
     "text": "Playlist",
     "icon_label": "",
     "function": "Opens the playlist panel",
-    "bbox": [10, 50, 100, 80],
+    "bbox_norm": [0.14, 0.91, 0.22, 0.98],
     "source": "ocr"
-  },
-  "def456": {
-    "class": "button",
-    "text": "",
-    "icon_label": "Play",
-    "function": "Starts media playback",
-    "bbox": [200, 300, 240, 340],
-    "source": "vlm"
   }
 }
-
-Matching: elements are matched by bbox IoU, not exact position.
-This handles minor position shifts between sessions.
 """
 
 from __future__ import annotations
@@ -34,19 +23,19 @@ import json
 import logging
 from pathlib import Path
 
-from gazefy.utils.geometry import Rect, iou
-
 logger = logging.getLogger(__name__)
 
-IOU_MATCH_THRESHOLD = 0.3  # Loose matching for registry lookup
+IOU_MATCH_THRESHOLD = 0.3
 
 
-def _bbox_hash(x1: int, y1: int, x2: int, y2: int) -> str:
-    return hashlib.md5(f"{x1},{y1},{x2},{y2}".encode()).hexdigest()[:8]
+def _norm_hash(nx1: float, ny1: float, nx2: float, ny2: float) -> str:
+    """Hash from normalized coords (rounded to avoid float noise)."""
+    s = f"{nx1:.3f},{ny1:.3f},{nx2:.3f},{ny2:.3f}"
+    return hashlib.md5(s.encode()).hexdigest()[:8]
 
 
 class ElementRegistry:
-    """Persistent semantic registry for UI elements."""
+    """Persistent semantic registry with normalized coordinates."""
 
     def __init__(self, registry_path: Path | None = None):
         self._path = registry_path
@@ -62,19 +51,24 @@ class ElementRegistry:
     def register(
         self,
         bbox: tuple[int, int, int, int],
+        frame_w: int,
+        frame_h: int,
         element_class: str,
         text: str = "",
         icon_label: str = "",
         function: str = "",
         source: str = "ocr",
     ) -> str:
-        """Register or update an element. Returns the entry key."""
-        key = _bbox_hash(*bbox)
+        """Register an element with normalized bbox. Returns entry key."""
+        # Normalize to 0-1
+        nx1 = bbox[0] / max(frame_w, 1)
+        ny1 = bbox[1] / max(frame_h, 1)
+        nx2 = bbox[2] / max(frame_w, 1)
+        ny2 = bbox[3] / max(frame_h, 1)
+        key = _norm_hash(nx1, ny1, nx2, ny2)
 
-        # Check if already registered with same info
         if key in self._entries:
             existing = self._entries[key]
-            # Only update if new info is better
             if not existing.get("text") and text:
                 existing["text"] = text
             if not existing.get("icon_label") and icon_label:
@@ -88,41 +82,40 @@ class ElementRegistry:
             "text": text,
             "icon_label": icon_label,
             "function": function,
-            "bbox": list(bbox),
+            "bbox_norm": [round(nx1, 4), round(ny1, 4), round(nx2, 4), round(ny2, 4)],
             "source": source,
         }
         return key
 
-    def lookup(self, bbox: Rect, element_class: str = "") -> dict | None:
-        """Find a registered element by IoU, with class-aware center fallback."""
+    def lookup(
+        self,
+        bbox_x1: float,
+        bbox_y1: float,
+        bbox_x2: float,
+        bbox_y2: float,
+        frame_w: int,
+        frame_h: int,
+        element_class: str = "",
+    ) -> dict | None:
+        """Find a registered element by normalized bbox proximity."""
+        # Normalize query bbox
+        nx = (bbox_x1 / max(frame_w, 1) + bbox_x2 / max(frame_w, 1)) / 2
+        ny = (bbox_y1 / max(frame_h, 1) + bbox_y2 / max(frame_h, 1)) / 2
+
         best_entry = None
-        best_score = 0.0
-        cx, cy = bbox.center.x, bbox.center.y
-        bw = bbox.x2 - bbox.x1
+        best_dist = 0.05  # Max 5% of frame distance
 
         for entry in self._entries.values():
-            eb = entry["bbox"]
-            entry_rect = Rect(eb[0], eb[1], eb[2], eb[3])
-            score = iou(bbox, entry_rect)
-            if score > best_score:
-                best_score = score
-                best_entry = entry
-
-        if best_score >= IOU_MATCH_THRESHOLD:
-            return best_entry
-
-        # Fallback: center proximity, same class only, tight radius
-        best_entry = None
-        max_dist = max(10.0, bw * 0.5)  # Proportional to element size
-        best_dist = max_dist
-        for entry in self._entries.values():
-            # Must be same class (don't confuse Play with Next)
+            # Class filter
             if element_class and entry.get("class") != element_class:
                 continue
-            eb = entry["bbox"]
-            ecx = (eb[0] + eb[2]) / 2
-            ecy = (eb[1] + eb[3]) / 2
-            dist = ((cx - ecx) ** 2 + (cy - ecy) ** 2) ** 0.5
+            bn = entry.get("bbox_norm", entry.get("bbox", [0, 0, 0, 0]))
+            # Handle old format (absolute pixels) — skip
+            if any(v > 1.1 for v in bn):
+                continue
+            ecx = (bn[0] + bn[2]) / 2
+            ecy = (bn[1] + bn[3]) / 2
+            dist = ((nx - ecx) ** 2 + (ny - ecy) ** 2) ** 0.5
             if dist < best_dist:
                 best_dist = dist
                 best_entry = entry
@@ -130,7 +123,6 @@ class ElementRegistry:
         return best_entry
 
     def save(self) -> None:
-        """Save registry to disk."""
         if self._path:
             self._path.write_text(json.dumps(self._entries, indent=2))
             logger.info("Saved %d registry entries", len(self._entries))

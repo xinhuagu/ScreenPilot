@@ -53,10 +53,29 @@ def load_model():
     return processor, model
 
 
-def predict_image(processor, model, image: Image.Image, threshold: float = 0.25) -> list[dict]:
-    """Run GroundingDINO on a single image. Returns list of detections."""
+def predict_image(
+    processor,
+    model,
+    image: Image.Image,
+    threshold: float = 0.25,
+    text_prompt: str | None = None,
+) -> list[dict]:
+    """Run GroundingDINO on a single image. Returns list of detections.
+
+    Args:
+        text_prompt: Custom period-separated prompt. If None, uses default CLASSES.
+    """
+    prompt = text_prompt or TEXT_PROMPT
+    # Parse custom prompt into class list for matching
+    if text_prompt:
+        custom_classes = [
+            c.strip().lower() for c in text_prompt.rstrip(".").split(".") if c.strip()
+        ]
+    else:
+        custom_classes = None
+
     device = next(model.parameters()).device
-    inputs = processor(images=image, text=TEXT_PROMPT, return_tensors="pt").to(device)
+    inputs = processor(images=image, text=prompt, return_tensors="pt").to(device)
 
     with torch.no_grad():
         outputs = model(**inputs)
@@ -72,19 +91,41 @@ def predict_image(processor, model, image: Image.Image, threshold: float = 0.25)
     detections = []
     for box, score, label_text in zip(results["boxes"], results["scores"], results["text_labels"]):
         x1, y1, x2, y2 = box.tolist()
-        # Map label text to class ID
         label_text = label_text.strip().lower()
-        class_id = _match_class(label_text)
-        if class_id is not None:
+
+        if custom_classes:
+            # Match against custom prompt classes
+            class_id, class_name = _match_custom(label_text, custom_classes)
+        else:
+            # Match against default CLASSES
+            cid = _match_class(label_text)
+            class_id = cid
+            class_name = CLASSES[cid] if cid is not None else None
+
+        if class_id is not None and class_name:
             detections.append(
                 {
                     "class_id": class_id,
-                    "class_name": CLASSES[class_id],
+                    "class_name": class_name,
                     "confidence": float(score),
                     "bbox": (x1, y1, x2, y2),
                 }
             )
     return detections
+
+
+def _match_custom(text: str, classes: list[str]) -> tuple[int | None, str | None]:
+    """Match GroundingDINO output to a custom class list."""
+    text = text.strip().lower()
+    # Exact match
+    for i, cls in enumerate(classes):
+        if text == cls:
+            return i, cls
+    # Partial match
+    for i, cls in enumerate(classes):
+        if cls in text or text in cls:
+            return i, cls
+    return None, None
 
 
 def _match_class(text: str) -> int | None:

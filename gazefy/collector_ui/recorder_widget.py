@@ -436,9 +436,13 @@ class RecorderWidget(QMainWindow):
         # Look up element names from registry (stable, no OCR needed)
         if hasattr(self, "_registry") and self._registry and self._tracker.current_map.elements:
             reg_texts = {}
+            fw = self._tracker.current_map.frame_width or 1
+            fh = self._tracker.current_map.frame_height or 1
             for eid, el in self._tracker.current_map.elements.items():
                 if not el.text:
-                    reg = self._registry.lookup(el.bbox, el.class_name)
+                    reg = self._registry.lookup(
+                        el.bbox.x1, el.bbox.y1, el.bbox.x2, el.bbox.y2, fw, fh, el.class_name
+                    )
                     if reg:
                         name = reg.get("text") or reg.get("icon_label") or ""
                         if name:
@@ -469,7 +473,17 @@ class RecorderWidget(QMainWindow):
 
         # Enrich from registry
         if hasattr(self, "_registry") and self._registry:
-            reg = self._registry.lookup(el.bbox, el.class_name)
+            fw = self._ui_map.frame_width if self._ui_map else 1
+            fh = self._ui_map.frame_height if self._ui_map else 1
+            reg = self._registry.lookup(
+                el.bbox.x1,
+                el.bbox.y1,
+                el.bbox.x2,
+                el.bbox.y2,
+                fw,
+                fh,
+                el.class_name,
+            )
             if reg:
                 if not result["text"] and reg.get("text"):
                     result["text"] = reg["text"]

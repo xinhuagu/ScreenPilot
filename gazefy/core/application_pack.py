@@ -6,6 +6,7 @@ Each pack is a complete, portable directory:
     ├── pack.yaml              # Config: labels, window_match, thresholds
     ├── model.pt               # Current best model (copy of latest in models/)
     ├── icon_labels.json       # Accumulated icon semantic dictionary
+    ├── element_registry.json  # Persistent element semantic identity (normalized coords)
     ├── recordings/            # All video recordings for this app
     │   ├── 20260404_103000/
     │   │   ├── video.mp4
@@ -19,6 +20,9 @@ Each pack is a complete, portable directory:
     ├── models/                # All trained models with timestamps
     │   ├── model_20260404_120000.pt
     │   └── model_20260404_150000.pt
+    ├── knowledge/             # Downloaded HTML manuals for this app
+    │   ├── html/              # Official docs (wget --recursive)
+    │   └── readthedocs/       # Alternative doc sources
     └── logs/                  # Training + operation logs
         ├── train_20260404_120000.log
         └── train_20260404_150000.log
@@ -96,6 +100,16 @@ class ApplicationPack:
     def icon_labels_path(self) -> Path:
         return self.pack_dir / "icon_labels.json"
 
+    @property
+    def knowledge_dir(self) -> Path:
+        return self.pack_dir / "knowledge"
+
+    @property
+    def has_knowledge(self) -> bool:
+        """True if knowledge base has any HTML docs."""
+        kd = self.knowledge_dir
+        return kd.exists() and any(kd.rglob("*.html"))
+
     def ensure_dirs(self) -> None:
         """Create all pack subdirectories if they don't exist."""
         for d in [
@@ -103,6 +117,7 @@ class ApplicationPack:
             self.training_data_dir,
             self.models_dir,
             self.logs_dir,
+            self.knowledge_dir,
         ]:
             d.mkdir(parents=True, exist_ok=True)
 

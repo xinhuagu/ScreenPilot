@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import re
 from pathlib import Path
 from typing import Callable
 
@@ -151,47 +150,60 @@ def run_annotate(
                     # Register with OCR text
                     registry.register(
                         bbox=tuple(int(b) for b in bbox),
+                        frame_w=img.width,
+                        frame_h=img.height,
                         element_class=det["class_name"],
                         text=text,
                         source="ocr",
                     )
 
-            # VLM for icons (no OCR text) — label + function
+            # VLM for icons (no OCR text) — crop each icon individually
             icons = [d for d in dets if not d.get("ocr_text")]
+            n_vlm = 0
             if icons and vlm:
-                try:
-                    _, buf = cv2.imencode(".jpg", img_np[:, :, ::-1])
-                    b64 = base64.b64encode(buf).decode()
-                    icon_desc = ", ".join(
-                        f"#{j + 1} at ({d['bbox'][0]:.0f},{d['bbox'][1]:.0f})"
-                        for j, d in enumerate(icons)
-                    )
-                    resp = vlm.chat_with_image(
-                        f"UI screenshot with {len(icons)} icon elements. "
-                        f"Icons: {icon_desc}.\n"
-                        "For each icon, reply with its label AND function.\n"
-                        "Format: #1: Label | Function, #2: Label | Function",
-                        b64,
-                        max_tokens=500,
-                    )
-                    for m in re.finditer(r"#(\d+):\s*(.+?)(?:\||,|$)", resp):
-                        idx_match = int(m.group(1)) - 1
-                        parts = m.group(2).strip().split("|")
+                for icon_det in icons:
+                    try:
+                        bx1, by1, bx2, by2 = (int(v) for v in icon_det["bbox"])
+                        # Pad crop by 50% of bbox size for context
+                        pad_x = max(10, int((bx2 - bx1) * 0.5))
+                        pad_y = max(10, int((by2 - by1) * 0.5))
+                        cx1 = max(0, bx1 - pad_x)
+                        cy1 = max(0, by1 - pad_y)
+                        cx2 = min(img.width, bx2 + pad_x)
+                        cy2 = min(img.height, by2 + pad_y)
+                        crop = img_np[cy1:cy2, cx1:cx2]
+                        if crop.size == 0:
+                            continue
+                        _, buf = cv2.imencode(".jpg", crop[:, :, ::-1])
+                        b64 = base64.b64encode(buf).decode()
+                        resp = vlm.chat_with_image(
+                            "This is a cropped UI icon element. "
+                            "What is this icon? Reply in format: Label | Function\n"
+                            "Example: Play | Start playback",
+                            b64,
+                            max_tokens=100,
+                        )
+                        # Parse "Label | Function"
+                        parts = resp.strip().split("|")
                         label = parts[0].strip()
                         func = parts[1].strip() if len(parts) > 1 else ""
-                        if 0 <= idx_match < len(icons):
-                            icons[idx_match]["vlm_label"] = label
-                            # Register icon with VLM label + function
-                            bbox = icons[idx_match]["bbox"]
+                        # Clean up markdown/quotes
+                        label = label.strip("*`\"'")
+                        func = func.strip("*`\"'")
+                        if label:
+                            icon_det["vlm_label"] = label
                             registry.register(
-                                bbox=tuple(int(b) for b in bbox),
-                                element_class=icons[idx_match]["class_name"],
+                                bbox=(bx1, by1, bx2, by2),
+                                frame_w=img.width,
+                                frame_h=img.height,
+                                element_class=icon_det["class_name"],
                                 icon_label=label,
                                 function=func,
                                 source="vlm",
                             )
-                except Exception:
-                    pass  # VLM error — continue
+                            n_vlm += 1
+                    except Exception:
+                        continue
 
             # Save YOLO label
             yolo = detections_to_yolo(dets, img.width, img.height)
@@ -199,7 +211,7 @@ def run_annotate(
             total_dets += len(dets)
             log(
                 f"  [{i + 1}/{len(to_label)}] {name}: "
-                f"{len(dets)} dets ({n_ocr} OCR, {len(icons)} icons)"
+                f"{len(dets)} dets ({n_ocr} OCR, {n_vlm} VLM, {len(icons)} icons)"
             )
 
         # Save registry
