@@ -92,11 +92,11 @@ class ElementVerifier:
         actual_text = self._ocr.read_element_text(frame, (x1, y1, x2, y2))
 
         if not expected_text:
-            # No expected text — just check element exists (has some content)
+            # No expected text — cannot verify, report SKIP not PASS
             return VerificationReport(
-                result=VerifyResult.PASS,
+                result=VerifyResult.SKIP,
                 actual_text=actual_text or "",
-                detail="No expected text to verify",
+                detail="No expected text to verify against",
             )
 
         # Compare

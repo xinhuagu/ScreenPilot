@@ -138,9 +138,24 @@ class ScreenClassifier:
         detections = detector.detect(frame_bgra)
         h, w = frame.shape[:2]
 
+        # OCR each detection to populate text for signature matching
+        ocr = None
+        try:
+            from gazefy.detection.ocr import ElementOCR
+
+            ocr = ElementOCR()
+        except Exception:
+            pass
+
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if frame.shape[2] == 3 else frame
         elements = {}
         for i, det in enumerate(detections):
             eid = f"tmp_{i}"
+            text = ""
+            if ocr:
+                bx1, by1 = int(det.bbox.x1), int(det.bbox.y1)
+                bx2, by2 = int(det.bbox.x2), int(det.bbox.y2)
+                text = ocr.read_element_text(frame_rgb, (bx1, by1, bx2, by2)) or ""
             elements[eid] = UIElement(
                 id=eid,
                 class_id=det.class_id,
@@ -148,6 +163,7 @@ class ScreenClassifier:
                 confidence=det.confidence,
                 bbox=det.bbox,
                 center=det.bbox.center,
+                text=text,
             )
 
         ui_map = UIMap(elements=elements, frame_width=w, frame_height=h)
