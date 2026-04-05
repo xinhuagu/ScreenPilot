@@ -158,7 +158,12 @@ class ElementVerifier:
                 )
 
         # Check element appearance
-        if expected_element_appears and self._resolver:
+        if expected_element_appears:
+            if not self._resolver:
+                return VerificationReport(
+                    result=VerifyResult.SKIP,
+                    detail=f"Cannot verify element '{expected_element_appears}': no resolver",
+                )
             found = False
             for el in ui_map.elements.values():
                 entry = self._resolver.resolve(el)
@@ -172,6 +177,11 @@ class ElementVerifier:
                 )
 
         # Check element disappearance
+        if expected_element_disappears and not self._resolver:
+            return VerificationReport(
+                result=VerifyResult.SKIP,
+                detail=f"Cannot verify element '{expected_element_disappears}': no resolver",
+            )
         if expected_element_disappears and self._resolver:
             for el in ui_map.elements.values():
                 entry = self._resolver.resolve(el)

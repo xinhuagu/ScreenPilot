@@ -80,14 +80,16 @@ class ScreenClassifier:
         """
         # Collect semantic IDs from current UIMap
         current_ids: set[str] = set()
-        if ontology_resolver:
-            for el in ui_map.elements.values():
+        for el in ui_map.elements.values():
+            # Use pre-enriched semantic_id if available
+            if el.semantic_id:
+                current_ids.add(el.semantic_id)
+            # Resolve via ontology if provided
+            if ontology_resolver:
                 entry = ontology_resolver.resolve(el)
                 if entry:
                     current_ids.add(entry.semantic_id)
-
-        # Also use element text as fallback identifiers
-        for el in ui_map.elements.values():
+            # Also use element text as fallback identifier
             if el.text:
                 current_ids.add(el.text.lower().strip())
 
@@ -171,16 +173,20 @@ class ScreenClassifier:
         Takes a snapshot of what elements are visible and creates a signature.
         """
         elements = []
-        if ontology_resolver:
-            for el in ui_map.elements.values():
+        for el in ui_map.elements.values():
+            # Use pre-enriched semantic_id
+            if el.semantic_id:
+                elements.append(el.semantic_id)
+                continue
+            # Try ontology resolver
+            if ontology_resolver:
                 entry = ontology_resolver.resolve(el)
                 if entry:
                     elements.append(entry.semantic_id)
-        # Fallback: use element text when no resolver available
-        if not elements:
-            for el in ui_map.elements.values():
-                if el.text:
-                    elements.append(el.text.lower().strip())
+                    continue
+            # Fallback: use element text
+            if el.text:
+                elements.append(el.text.lower().strip())
 
         sig = ScreenSignature(
             label=label,
